@@ -37,6 +37,7 @@ export async function POST(req: Request) {
   const result = streamText({
     model: ollama(model),
     messages: await convertToModelMessages(messages),
+    providerOptions: { ollama: { think: true } },
   });
 
   result.consumeStream();

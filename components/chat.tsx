@@ -3,7 +3,7 @@
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import type { UIMessage } from 'ai';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -210,6 +210,10 @@ function MessageBubble({ message }: { message: MessageType }) {
   const text = message.parts
     .map((p) => (p.type === 'text' ? p.text : ''))
     .join('');
+  const reasoning = message.parts
+    .filter((p) => p.type === 'reasoning')
+    .map((p) => (p as { type: 'reasoning'; text: string }).text)
+    .join('');
 
   return (
     <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
@@ -220,12 +224,35 @@ function MessageBubble({ message }: { message: MessageType }) {
             : 'max-w-[85%] rounded-2xl bg-muted px-4 py-2 text-foreground'
         }
       >
+        {!isUser && reasoning && <ThinkingBlock text={reasoning} />}
         {isUser ? (
           <div className="whitespace-pre-wrap text-sm">{text}</div>
         ) : (
           <Markdown content={text} />
         )}
       </div>
+    </div>
+  );
+}
+
+function ThinkingBlock({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mb-2 rounded-lg border border-border/60 bg-background/50">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="font-medium">Thinking</span>
+        <span className="ml-auto text-[10px]">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="border-t border-border/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+          {text}
+        </div>
+      )}
     </div>
   );
 }
