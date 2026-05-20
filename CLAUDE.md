@@ -66,4 +66,4 @@ Ollama must be running on `localhost:11434` for chat to work. Test with `curl ht
 
 ## Current phase
 
-Phase 1 complete — chat working, no persistence yet.
+Phase 2 complete — chat with persistence, sidebar, conversation switching.
