@@ -6,7 +6,7 @@ import {
 } from 'ai';
 import { createOllama } from 'ollama-ai-provider-v2';
 import { db } from '@/lib/db/client';
-import { messages as messagesTable, conversations } from '@/lib/db/schema';
+import { messages as messagesTable, conversations, projects } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -34,10 +34,27 @@ export async function POST(req: Request) {
   }: { messages: UIMessage[]; model: string; conversationId: string } =
     parsed.data;
 
+  let systemPrompt: string | undefined;
+  const convo = await db
+    .select({ projectId: conversations.projectId })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .get();
+
+  if (convo?.projectId) {
+    const project = await db
+      .select({ instructions: projects.instructions })
+      .from(projects)
+      .where(eq(projects.id, convo.projectId))
+      .get();
+    if (project?.instructions) systemPrompt = project.instructions;
+  }
+
   const result = streamText({
     model: ollama(model),
+    system: systemPrompt,
     messages: await convertToModelMessages(messages),
-    providerOptions: { ollama: { think: true } },
+    providerOptions: { ollama: {} },
   });
 
   result.consumeStream();

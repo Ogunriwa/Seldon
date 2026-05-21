@@ -19,14 +19,25 @@ type ChatProps = {
   id?: string;
   initialMessages?: UIMessage[];
   initialModel?: string;
+  projectId?: string | null;
 };
 
-export function Chat({ id, initialMessages, initialModel }: ChatProps) {
+export function Chat({ id, initialMessages, initialModel, projectId: initialProjectId }: ChatProps) {
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState(initialModel ?? '');
   const [conversationId, setConversationId] = useState(id);
   const [input, setInput] = useState('');
   const [creating, setCreating] = useState(false);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(initialProjectId ?? null);
+
+  useEffect(() => {
+    if (id) return;
+    const handler = (e: Event) => {
+      setActiveProjectId((e as CustomEvent).detail ?? null);
+    };
+    window.addEventListener('project-changed', handler);
+    return () => window.removeEventListener('project-changed', handler);
+  }, [id]);
 
   const modelRef = useRef(model);
   modelRef.current = model;
@@ -72,7 +83,7 @@ export function Chat({ id, initialMessages, initialModel }: ChatProps) {
         const res = await fetch('/api/conversations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, firstMessage: text }),
+          body: JSON.stringify({ model, firstMessage: text, projectId: activeProjectId ?? undefined }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
@@ -155,10 +166,6 @@ export function Chat({ id, initialMessages, initialModel }: ChatProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex shrink-0 items-center justify-end border-b border-border px-4 py-2">
-        {modelPicker}
-      </header>
-
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
           {messages.map((m) => (
@@ -175,28 +182,28 @@ export function Chat({ id, initialMessages, initialModel }: ChatProps) {
         </div>
       </div>
 
-      <form
-        className="shrink-0 border-t border-border bg-background"
-        onSubmit={onSubmit}
-      >
-        <div className="mx-auto flex max-w-3xl items-end gap-2 px-4 py-3">
+      <form className="shrink-0 bg-background px-4 py-3" onSubmit={onSubmit}>
+        <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-muted/40 p-4 shadow-sm">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Send a message…"
             rows={2}
-            className="min-h-[44px] flex-1 resize-none"
+            className="min-h-[44px] resize-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
           />
-          {busy ? (
-            <Button type="button" variant="outline" onClick={() => stop()}>
-              Stop
-            </Button>
-          ) : (
-            <Button type="submit" disabled={!input.trim() || !model || creating}>
-              Send
-            </Button>
-          )}
+          <div className="flex items-center justify-between pt-2">
+            {modelPicker}
+            {busy ? (
+              <Button type="button" variant="outline" onClick={() => stop()}>
+                Stop
+              </Button>
+            ) : (
+              <Button type="submit" disabled={!input.trim() || !model || creating}>
+                Send
+              </Button>
+            )}
+          </div>
         </div>
       </form>
     </div>

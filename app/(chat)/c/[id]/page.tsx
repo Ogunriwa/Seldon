@@ -34,6 +34,12 @@ export default async function ConversationPage({
   }));
 
   return (
-    <Chat key={id} id={id} initialMessages={initialMessages} initialModel={conversation.model} />
+    <Chat
+      key={id}
+      id={id}
+      initialMessages={initialMessages}
+      initialModel={conversation.model}
+      projectId={conversation.projectId}
+    />
   );
 }
