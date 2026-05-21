@@ -12,7 +12,25 @@ import { z } from 'zod';
 
 export const maxDuration = 60;
 
-const ollama = createOllama({ baseURL: 'http://localhost:11434/api' });
+const OLLAMA_BASE = 'http://localhost:11434';
+const ollama = createOllama({ baseURL: `${OLLAMA_BASE}/api` });
+
+async function modelSupportsThinking(modelName: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${OLLAMA_BASE}/api/show`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: modelName }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const template: string = data.template || '';
+    const modelfile: string = data.modelfile || '';
+    return template.toLowerCase().includes('think') || /^RENDERER\s/m.test(modelfile);
+  } catch {
+    return false;
+  }
+}
 
 const chatSchema = z.object({
   messages: z.array(z.any()),
@@ -50,11 +68,13 @@ export async function POST(req: Request) {
     if (project?.instructions) systemPrompt = project.instructions;
   }
 
+  const think = await modelSupportsThinking(model);
+
   const result = streamText({
     model: ollama(model),
     system: systemPrompt,
     messages: await convertToModelMessages(messages),
-    providerOptions: { ollama: {} },
+    providerOptions: { ollama: think ? { think: true } : {} },
   });
 
   result.consumeStream();
