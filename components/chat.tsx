@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Markdown } from '@/components/markdown';
+import { ChevronDown } from 'lucide-react';
 
 type ChatProps = {
   id?: string;
@@ -168,8 +169,12 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
     <div className="flex h-full flex-col">
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
-          {messages.map((m) => (
-            <MessageBubble key={m.id} message={m} />
+          {messages.map((m, i) => (
+            <MessageBubble
+              key={m.id}
+              message={m}
+              isThinking={busy && i === messages.length - 1 && m.role === 'assistant'}
+            />
           ))}
           {status === 'submitted' && (
             <div className="text-sm text-muted-foreground">…</div>
@@ -212,7 +217,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
 
 type MessageType = ReturnType<typeof useChat>['messages'][number];
 
-function MessageBubble({ message }: { message: MessageType }) {
+function MessageBubble({ message, isThinking }: { message: MessageType; isThinking: boolean }) {
   const isUser = message.role === 'user';
   const text = message.parts
     .map((p) => (p.type === 'text' ? p.text : ''))
@@ -231,7 +236,7 @@ function MessageBubble({ message }: { message: MessageType }) {
             : 'max-w-[85%] rounded-2xl bg-muted px-4 py-2 text-foreground'
         }
       >
-        {!isUser && reasoning && <ThinkingBlock text={reasoning} />}
+        {!isUser && reasoning && <ThinkingBlock text={reasoning} active={isThinking} />}
         {isUser ? (
           <div className="whitespace-pre-wrap text-sm">{text}</div>
         ) : (
@@ -242,21 +247,63 @@ function MessageBubble({ message }: { message: MessageType }) {
   );
 }
 
-function ThinkingBlock({ text }: { text: string }) {
+function ChipIcon({ animate, className }: { animate?: boolean; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      className={className}
+    >
+      <style>{`
+        @keyframes signal-flow {
+          0% { stroke-dashoffset: 8; }
+          100% { stroke-dashoffset: 0; }
+        }
+        .chip-wire { stroke-dasharray: none; }
+        .chip-wire-animate {
+          stroke-dasharray: 2 2;
+          animation: signal-flow 0.6s linear infinite;
+        }
+      `}</style>
+      {/* Chip body */}
+      <rect x="7" y="7" width="10" height="10" rx="1.5" />
+      {/* Inner die */}
+      <rect x="9.5" y="9.5" width="5" height="5" rx="0.5" strokeWidth="1" />
+      {/* Top pins */}
+      <line x1="10" y1="3" x2="10" y2="7" className={animate ? 'chip-wire-animate' : 'chip-wire'} />
+      <line x1="14" y1="3" x2="14" y2="7" className={animate ? 'chip-wire-animate' : 'chip-wire'} style={{ animationDelay: '0.15s' }} />
+      {/* Bottom pins */}
+      <line x1="10" y1="17" x2="10" y2="21" className={animate ? 'chip-wire-animate' : 'chip-wire'} style={{ animationDelay: '0.3s' }} />
+      <line x1="14" y1="17" x2="14" y2="21" className={animate ? 'chip-wire-animate' : 'chip-wire'} style={{ animationDelay: '0.45s' }} />
+      {/* Left pins */}
+      <line x1="3" y1="10" x2="7" y2="10" className={animate ? 'chip-wire-animate' : 'chip-wire'} style={{ animationDelay: '0.1s' }} />
+      <line x1="3" y1="14" x2="7" y2="14" className={animate ? 'chip-wire-animate' : 'chip-wire'} style={{ animationDelay: '0.25s' }} />
+      {/* Right pins */}
+      <line x1="17" y1="10" x2="22" y2="10" className={animate ? 'chip-wire-animate' : 'chip-wire'} style={{ animationDelay: '0.4s' }} />
+      <line x1="17" y1="14" x2="22" y2="14" className={animate ? 'chip-wire-animate' : 'chip-wire'} style={{ animationDelay: '0.55s' }} />
+    </svg>
+  );
+}
+
+function ThinkingBlock({ text, active }: { text: string; active: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="mb-2 rounded-lg border border-border/60 bg-background/50">
+    <div className="mb-4">
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-2.5 py-1 text-xs text-muted-foreground/70 hover:text-muted-foreground transition-colors"
         onClick={() => setOpen((o) => !o)}
       >
+        <ChipIcon animate={active} className="h-4 w-4" />
         <span className="font-medium">Thinking</span>
-        <span className="ml-auto text-[10px]">{open ? '▲' : '▼'}</span>
+        <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="border-t border-border/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+        <div className="mt-2.5 ml-6.5 text-xs leading-relaxed text-muted-foreground/70 whitespace-pre-wrap">
           {text}
         </div>
       )}
