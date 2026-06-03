@@ -29,6 +29,14 @@ type StagedFile = { file: File; id: string };
 
 let fileIdCounter = 0;
 
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+
+function isImageFile(file: File): boolean {
+  if (file.type.startsWith('image/')) return true;
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  return IMAGE_EXTENSIONS.includes(ext);
+}
+
 export function Chat({ id, initialMessages, initialModel, projectId: initialProjectId, initialAttachments }: ChatProps) {
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState(initialModel ?? '');
@@ -41,6 +49,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [visionSupported, setVisionSupported] = useState(false);
   const [messageAttachments, setMessageAttachments] = useState<Record<string, AttachmentInfo[]>>(
     initialAttachments ?? {},
   );
@@ -114,6 +123,26 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
     fetchModels();
   }, [fetchModels]);
 
+  // Detect whether the selected model accepts image inputs.
+  useEffect(() => {
+    if (!model) {
+      setVisionSupported(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/capabilities?model=${encodeURIComponent(model)}`)
+      .then((r) => r.json())
+      .then((data: { vision?: boolean }) => {
+        if (!cancelled) setVisionSupported(Boolean(data.vision));
+      })
+      .catch(() => {
+        if (!cancelled) setVisionSupported(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [model]);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -123,16 +152,25 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
     const selected = e.target.files;
     if (!selected) return;
 
-    const newFiles: StagedFile[] = [];
+    // Filter out images if the current model can't see them.
+    const incoming = Array.from(selected);
+    const blockedImages = visionSupported
+      ? []
+      : incoming.filter((f) => isImageFile(f));
+    const allowed = visionSupported
+      ? incoming
+      : incoming.filter((f) => !isImageFile(f));
+
     const currentCount = stagedFiles.length;
     const maxToAdd = 5 - currentCount;
+    const newFiles: StagedFile[] = allowed
+      .slice(0, maxToAdd)
+      .map((file) => ({ file, id: `staged-${++fileIdCounter}` }));
 
-    for (let i = 0; i < Math.min(selected.length, maxToAdd); i++) {
-      newFiles.push({ file: selected[i], id: `staged-${++fileIdCounter}` });
-    }
-
-    if (selected.length > maxToAdd) {
-      setUploadError(`Maximum 5 files per message. ${selected.length - maxToAdd} file(s) were not added.`);
+    if (blockedImages.length > 0) {
+      setUploadError('The selected model does not support image inputs. Switch to a vision model to attach images.');
+    } else if (allowed.length > maxToAdd) {
+      setUploadError(`Maximum 5 files per message. ${allowed.length - maxToAdd} file(s) were not added.`);
     } else {
       setUploadError(null);
     }
@@ -141,7 +179,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
 
     // Reset the input so the same file can be selected again
     e.target.value = '';
-  }, [stagedFiles.length]);
+  }, [stagedFiles.length, visionSupported]);
 
   const removeStagedFile = useCallback((id: string) => {
     setStagedFiles((prev) => prev.filter((f) => f.id !== id));
@@ -240,7 +278,9 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
   const isEmpty = messages.length === 0;
   const hasContent = input.trim() || stagedFiles.length > 0;
 
-  const ACCEPTED_TYPES = '.txt,.md,.csv,.json,.pdf,.py,.ts,.js,.jsx,.tsx,.rs,.go,.java,.c,.cpp,.h,.rb,.sh,.yaml,.yml,.toml,.xml,.html,.css,.sql,.log,.env,.ini,.cfg,.conf,.mjs,.cjs,.graphql,.gql,.prisma,.swift,.kt,.scala,.r,.lua,.pl,.php,.ex,.zig,.dart,.makefile,.dockerfile,.hpp,.scss,.bash,.zsh,.fish';
+  const DOC_TYPES = '.txt,.md,.csv,.json,.pdf,.py,.ts,.js,.jsx,.tsx,.rs,.go,.java,.c,.cpp,.h,.rb,.sh,.yaml,.yml,.toml,.xml,.html,.css,.sql,.log,.env,.ini,.cfg,.conf,.mjs,.cjs,.graphql,.gql,.prisma,.swift,.kt,.scala,.r,.lua,.pl,.php,.ex,.zig,.dart,.makefile,.dockerfile,.hpp,.scss,.bash,.zsh,.fish';
+  const IMAGE_TYPES = '.png,.jpg,.jpeg,.webp,.gif';
+  const ACCEPTED_TYPES = visionSupported ? `${DOC_TYPES},${IMAGE_TYPES}` : DOC_TYPES;
 
   const fileInput = (
     <input
@@ -259,7 +299,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
       onClick={() => fileInputRef.current?.click()}
       disabled={!model || stagedFiles.length >= 5}
       className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      title="Attach files"
+      title={visionSupported ? 'Attach files or images' : 'Attach files (this model can’t read images)'}
     >
       <Paperclip className="h-4 w-4" />
     </button>

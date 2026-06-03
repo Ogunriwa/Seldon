@@ -14,6 +14,22 @@ const ALLOWED_MIME_PREFIXES = [
   'application/pdf',
 ];
 
+// Image types handled separately — stored as base64 for vision models, not
+// text-extracted.
+const IMAGE_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+]);
+
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+
+function isImage(mediaType: string, filename: string): boolean {
+  if (IMAGE_MIME_TYPES.has(mediaType)) return true;
+  return IMAGE_EXTENSIONS.has(getExtension(filename));
+}
+
 // Extensions treated as text regardless of MIME type (browsers often send
 // application/octet-stream for code files)
 const TEXT_EXTENSIONS = new Set([
@@ -32,6 +48,7 @@ const TEXT_EXTENSIONS = new Set([
 
 function isAllowedFile(mediaType: string, filename: string): boolean {
   if (ALLOWED_MIME_PREFIXES.some((p) => mediaType.startsWith(p))) return true;
+  if (isImage(mediaType, filename)) return true;
   const ext = '.' + filename.split('.').pop()?.toLowerCase();
   return TEXT_EXTENSIONS.has(ext);
 }
@@ -91,6 +108,7 @@ export async function POST(req: Request) {
     mediaType: string;
     sizeBytes: number;
     extractedText: string | null;
+    data: string | null;
     error: string | null;
   }> = [];
 
@@ -108,6 +126,7 @@ export async function POST(req: Request) {
         mediaType,
         sizeBytes,
         extractedText: null,
+        data: null,
         error: `File too large (${(sizeBytes / 1024 / 1024).toFixed(1)} MB). Maximum is 10 MB.`,
       });
       continue;
@@ -121,18 +140,40 @@ export async function POST(req: Request) {
         mediaType,
         sizeBytes,
         extractedText: null,
-        error: `Unsupported file type: ${mediaType}. Upload text, code, PDF, CSV, or JSON files.`,
+        data: null,
+        error: `Unsupported file type: ${mediaType}. Upload text, code, PDF, image, CSV, or JSON files.`,
       });
       continue;
     }
 
-    // Extract text
     try {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      const { text, error } = await extractText(buffer, filename, mediaType);
 
-      results.push({ id, filename, mediaType, sizeBytes, extractedText: text, error });
+      if (isImage(mediaType, filename)) {
+        // Images: store base64, no text extraction. Sent to vision models as
+        // image parts at chat time.
+        results.push({
+          id,
+          filename,
+          mediaType,
+          sizeBytes,
+          extractedText: null,
+          data: buffer.toString('base64'),
+          error: null,
+        });
+      } else {
+        const { text, error } = await extractText(buffer, filename, mediaType);
+        results.push({
+          id,
+          filename,
+          mediaType,
+          sizeBytes,
+          extractedText: text,
+          data: null,
+          error,
+        });
+      }
     } catch (e) {
       results.push({
         id,
@@ -140,13 +181,14 @@ export async function POST(req: Request) {
         mediaType,
         sizeBytes,
         extractedText: null,
+        data: null,
         error: 'An unexpected error occurred while processing this file.',
       });
     }
   }
 
-  // Persist all results (including failures — we want to show errors in UI)
-  // messageId is set to a placeholder; it gets linked when the message is sent
+  // Persist all results (including failures — we want to show errors in UI).
+  // messageId is null until the message is sent and linked in /api/chat.
   for (const r of results) {
     await db.insert(attachments).values({
       id: r.id,
@@ -156,6 +198,7 @@ export async function POST(req: Request) {
       mediaType: r.mediaType,
       sizeBytes: r.sizeBytes,
       extractedText: r.extractedText,
+      data: r.data,
       error: r.error,
       createdAt: new Date(),
     });

@@ -42,6 +42,9 @@ export const attachments = sqliteTable('attachments', {
   mediaType: text('media_type').notNull(),
   sizeBytes: integer('size_bytes').notNull(),
   extractedText: text('extracted_text'),
+  // Base64-encoded bytes for images (vision models). Null for text/PDF, which
+  // use extractedText instead.
+  data: text('data'),
   error: text('error'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });

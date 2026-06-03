@@ -45,6 +45,7 @@ export default async function ConversationPage({
     mediaType: string;
     sizeBytes: number;
     extractedText: string | null;
+    data: string | null;
     error: string | null;
   }>> = {};
 
@@ -59,6 +60,7 @@ export default async function ConversationPage({
       mediaType: a.mediaType,
       sizeBytes: a.sizeBytes,
       extractedText: a.extractedText,
+      data: a.data,
       error: a.error,
     });
   }

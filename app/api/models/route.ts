@@ -1,6 +1,6 @@
-type OllamaTag = { name: string; model: string };
+import { OLLAMA_BASE } from '@/lib/ollama';
 
-const OLLAMA_BASE = process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
+type OllamaTag = { name: string; model: string };
 
 export async function GET() {
   try {

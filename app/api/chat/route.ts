@@ -7,33 +7,16 @@ import {
 import { createOllama } from 'ollama-ai-provider-v2';
 import { db } from '@/lib/db/client';
 import { messages as messagesTable, conversations, projects, attachments } from '@/lib/db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
+import { OLLAMA_BASE, getModelCapabilities } from '@/lib/ollama';
 
 export const maxDuration = 60;
 
-const OLLAMA_BASE = process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
 const ollama = createOllama({ baseURL: `${OLLAMA_BASE}/api` });
 
 // Conservative context limit — truncate file content beyond this
 const MAX_FILE_CONTEXT_CHARS = 32_000;
-
-async function modelSupportsThinking(modelName: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${OLLAMA_BASE}/api/show`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: modelName }),
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    const template: string = data.template || '';
-    const modelfile: string = data.modelfile || '';
-    return template.toLowerCase().includes('think') || /^RENDERER\s/m.test(modelfile);
-  } catch {
-    return false;
-  }
-}
 
 const chatSchema = z.object({
   messages: z.array(z.any()),
@@ -121,13 +104,64 @@ export async function POST(req: Request) {
       : fileContext;
   }
 
-  const think = await modelSupportsThinking(model);
+  const { vision, thinking } = await getModelCapabilities(model);
+
+  // For vision models, attach image attachments to their messages as image
+  // parts so convertToModelMessages forwards them to the model. Historical
+  // images map by their linked messageId; freshly uploaded ones (this turn,
+  // not yet linked) attach to the most recent user message.
+  let modelMessages = messages;
+  if (vision) {
+    const imageRows = await db
+      .select({
+        id: attachments.id,
+        messageId: attachments.messageId,
+        mediaType: attachments.mediaType,
+        data: attachments.data,
+      })
+      .from(attachments)
+      .where(
+        and(
+          eq(attachments.conversationId, conversationId),
+          isNotNull(attachments.data),
+        ),
+      );
+
+    const pendingIds = new Set(pendingAttachmentIds ?? []);
+    const byMessageId = new Map<string, typeof imageRows>();
+    const pendingImages: typeof imageRows = [];
+
+    for (const row of imageRows) {
+      if (row.messageId) {
+        const list = byMessageId.get(row.messageId) ?? [];
+        list.push(row);
+        byMessageId.set(row.messageId, list);
+      } else if (pendingIds.has(row.id)) {
+        pendingImages.push(row);
+      }
+    }
+
+    const lastUserIndex = messages.map((m) => m.role).lastIndexOf('user');
+
+    modelMessages = messages.map((m, i) => {
+      const imgs = [...(byMessageId.get(m.id) ?? [])];
+      if (i === lastUserIndex) imgs.push(...pendingImages);
+      if (imgs.length === 0) return m;
+
+      const imageParts = imgs.map((img) => ({
+        type: 'file' as const,
+        mediaType: img.mediaType,
+        url: `data:${img.mediaType};base64,${img.data}`,
+      }));
+      return { ...m, parts: [...m.parts, ...imageParts] };
+    });
+  }
 
   const result = streamText({
     model: ollama(model),
     system: systemPrompt,
-    messages: await convertToModelMessages(messages),
-    providerOptions: { ollama: think ? { think: true } : {} },
+    messages: await convertToModelMessages(modelMessages),
+    providerOptions: { ollama: thinking ? { think: true } : {} },
   });
 
   result.consumeStream();

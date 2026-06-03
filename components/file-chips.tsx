@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { FileText, FileCode, FileSpreadsheet, File, X, AlertCircle } from 'lucide-react';
 
 export type AttachmentInfo = {
@@ -8,6 +9,7 @@ export type AttachmentInfo = {
   mediaType: string;
   sizeBytes: number;
   extractedText?: string | null;
+  data?: string | null;
   error?: string | null;
 };
 
@@ -15,6 +17,12 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImageType(mediaType: string, filename: string): boolean {
+  if (mediaType.startsWith('image/')) return true;
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  return ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
 }
 
 function FileIcon({ mediaType, filename }: { mediaType: string; filename: string }) {
@@ -40,6 +48,22 @@ export function StagedFiles({
   files: Array<{ file: File; id: string }>;
   onRemove: (id: string) => void;
 }) {
+  // Object URLs for image previews; revoked when the file set changes.
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const urls: Record<string, string> = {};
+    for (const { file, id } of files) {
+      if (isImageType(file.type, file.name)) {
+        urls[id] = URL.createObjectURL(file);
+      }
+    }
+    setThumbs(urls);
+    return () => {
+      for (const url of Object.values(urls)) URL.revokeObjectURL(url);
+    };
+  }, [files]);
+
   if (files.length === 0) return null;
 
   return (
@@ -49,7 +73,12 @@ export function StagedFiles({
           key={id}
           className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
         >
-          <FileIcon mediaType={file.type} filename={file.name} />
+          {thumbs[id] ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={thumbs[id]} alt={file.name} className="h-6 w-6 shrink-0 rounded object-cover" />
+          ) : (
+            <FileIcon mediaType={file.type} filename={file.name} />
+          )}
           <span className="max-w-[140px] truncate">{file.name}</span>
           <span className="text-muted-foreground">{formatSize(file.size)}</span>
           <button
@@ -75,28 +104,36 @@ export function AttachmentBadges({
 
   return (
     <div className="flex flex-wrap gap-1.5 mb-2">
-      {attachments.map((a) => (
-        <div
-          key={a.id}
-          className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
-            a.error
-              ? 'border border-destructive/40 bg-destructive/10 text-destructive'
-              : 'border border-border bg-background/60 text-muted-foreground'
-          }`}
-        >
-          {a.error ? (
-            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          ) : (
-            <FileIcon mediaType={a.mediaType} filename={a.filename} />
-          )}
-          <span className="max-w-[160px] truncate">{a.filename}</span>
-          {a.error && (
-            <span className="max-w-[200px] truncate text-[10px] opacity-80">
-              — {a.error}
-            </span>
-          )}
-        </div>
-      ))}
+      {attachments.map((a) => {
+        const isImage = isImageType(a.mediaType, a.filename);
+        const thumb = isImage && a.data ? `data:${a.mediaType};base64,${a.data}` : null;
+
+        return (
+          <div
+            key={a.id}
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
+              a.error
+                ? 'border border-destructive/40 bg-destructive/10 text-destructive'
+                : 'border border-border bg-background/60 text-muted-foreground'
+            }`}
+          >
+            {a.error ? (
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            ) : thumb ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={thumb} alt={a.filename} className="h-6 w-6 shrink-0 rounded object-cover" />
+            ) : (
+              <FileIcon mediaType={a.mediaType} filename={a.filename} />
+            )}
+            <span className="max-w-[160px] truncate">{a.filename}</span>
+            {a.error && (
+              <span className="max-w-[200px] truncate text-[10px] opacity-80">
+                — {a.error}
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
