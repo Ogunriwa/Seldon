@@ -15,6 +15,20 @@
       "when": 1779256788812,
       "tag": "0001_young_mother_askani",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1780453668760,
+      "tag": "0002_regular_rage",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1780453748474,
+      "tag": "0003_broad_purifiers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/client';
-import { conversations, messages } from '@/lib/db/schema';
+import { conversations, messages, attachments } from '@/lib/db/schema';
 import { eq, asc } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import { Chat } from '@/components/chat';
@@ -33,6 +33,36 @@ export default async function ConversationPage({
     createdAt: m.createdAt,
   }));
 
+  // Load attachments grouped by messageId
+  const allAttachments = await db
+    .select()
+    .from(attachments)
+    .where(eq(attachments.conversationId, id));
+
+  const attachmentsByMessage: Record<string, Array<{
+    id: string;
+    filename: string;
+    mediaType: string;
+    sizeBytes: number;
+    extractedText: string | null;
+    error: string | null;
+  }>> = {};
+
+  for (const a of allAttachments) {
+    if (!a.messageId) continue; // skip unlinked
+    if (!attachmentsByMessage[a.messageId]) {
+      attachmentsByMessage[a.messageId] = [];
+    }
+    attachmentsByMessage[a.messageId].push({
+      id: a.id,
+      filename: a.filename,
+      mediaType: a.mediaType,
+      sizeBytes: a.sizeBytes,
+      extractedText: a.extractedText,
+      error: a.error,
+    });
+  }
+
   return (
     <Chat
       key={id}
@@ -40,6 +70,7 @@ export default async function ConversationPage({
       initialMessages={initialMessages}
       initialModel={conversation.model}
       projectId={conversation.projectId}
+      initialAttachments={attachmentsByMessage}
     />
   );
 }

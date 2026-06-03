@@ -30,3 +30,18 @@ export const messages = sqliteTable('messages', {
   model: text('model'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
+
+export const attachments = sqliteTable('attachments', {
+  id: text('id').primaryKey(),
+  messageId: text('message_id')
+    .references(() => messages.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  filename: text('filename').notNull(),
+  mediaType: text('media_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  extractedText: text('extracted_text'),
+  error: text('error'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
