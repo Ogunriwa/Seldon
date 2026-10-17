@@ -3,6 +3,10 @@ import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
 
+// ── Markdown Component ───────────────────────────────────────────
+// A wrapper around react-markdown configured with GitHub Flavored Markdown (remark-gfm)
+// and syntax highlighting (rehype-highlight). It applies custom prose styles via Tailwind 
+// to ensure chat messages render beautifully, safely, and consistently across the app.
 export function Markdown({
   content,
   className,

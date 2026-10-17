@@ -3,7 +3,7 @@
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import type { UIMessage } from 'ai';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -15,13 +15,15 @@ import {
 } from '@/components/ui/select';
 import { Markdown } from '@/components/markdown';
 import { StagedFiles, AttachmentBadges, type AttachmentInfo } from '@/components/file-chips';
-import { ChevronDown, Paperclip } from 'lucide-react';
+import { ChevronDown, Paperclip, Plus, ArrowUp, Sparkles, Square } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 type ChatProps = {
   id?: string;
   initialMessages?: UIMessage[];
   initialModel?: string;
   projectId?: string | null;
+  projectName?: string | null;
   initialAttachments?: Record<string, AttachmentInfo[]>;
 };
 
@@ -37,7 +39,9 @@ function isImageFile(file: File): boolean {
   return IMAGE_EXTENSIONS.includes(ext);
 }
 
-export function Chat({ id, initialMessages, initialModel, projectId: initialProjectId, initialAttachments }: ChatProps) {
+export function Chat({ id, initialMessages, initialModel, projectId: initialProjectId, projectName, initialAttachments }: ChatProps) {
+  // ── State & Refs ────────────────────────────────────────────────
+  // Local state for models, conversation ID, inputs, uploading, and active project.
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState(initialModel ?? '');
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -53,10 +57,22 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
   const [messageAttachments, setMessageAttachments] = useState<Record<string, AttachmentInfo[]>>(
     initialAttachments ?? {},
   );
+  
   // Track pending attachment IDs that need to be linked to a message
   const pendingAttachmentIds = useRef<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 300)}px`;
+    }
+  }, [input]);
+
+  // ── Project & Chat Init ──────────────────────────────────────────
+  // Listen for global project changes if not bound to a specific chat ID
   useEffect(() => {
     if (id) return;
     const handler = (e: Event) => {
@@ -72,19 +88,32 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
   conversationIdRef.current = conversationId;
 
   const chatId = id ?? 'new';
+  
+  /*
+   * ── useChat Integration ────────────────────────────────────────
+   * Uses ai-sdk's useChat to handle real-time streaming of messages.
+   * → POST /api/chat
+   */
+  const transport = useMemo(() => new DefaultChatTransport({
+    api: '/api/chat',
+    body: () => ({
+      model: modelRef.current,
+      conversationId: conversationIdRef.current,
+      pendingAttachmentIds: pendingAttachmentIds.current,
+    }),
+  }), []);
+
   const { messages, sendMessage, status, stop, error } = useChat({
     id: chatId,
     messages: initialMessages,
-    transport: new DefaultChatTransport({
-      api: '/api/chat',
-      body: () => ({
-        model: modelRef.current,
-        conversationId: conversationIdRef.current,
-        pendingAttachmentIds: pendingAttachmentIds.current,
-      }),
-    }),
+    transport,
   });
 
+  /*
+   * ── Fetch Models ───────────────────────────────────────────────
+   * Retrieves available Ollama models.
+   * → GET /api/models
+   */
   const fetchModels = useCallback(() => {
     setLoadingModels(true);
     setModelsError(null);
@@ -123,7 +152,33 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
     fetchModels();
   }, [fetchModels]);
 
-  // Detect whether the selected model accepts image inputs.
+  useEffect(() => {
+    if (!id) return;
+    const promptKey = `pending_prompt_${id}`;
+    const attachmentsKey = `pending_attachments_${id}`;
+    
+    const pending = sessionStorage.getItem(promptKey);
+    const pendingAttachments = sessionStorage.getItem(attachmentsKey);
+    
+    if (pending || pendingAttachments) {
+      if (pending) sessionStorage.removeItem(promptKey);
+      if (pendingAttachments) {
+        sessionStorage.removeItem(attachmentsKey);
+        try {
+          pendingAttachmentIds.current = JSON.parse(pendingAttachments);
+        } catch (e) {
+          console.error('Failed to parse pending attachments', e);
+        }
+      }
+      sendMessage({ text: pending || '(see attached files)' });
+    }
+  }, [id, sendMessage]);
+
+  /*
+   * ── Detect Vision Capabilities ─────────────────────────────────
+   * Checks if the currently selected model supports image inputs.
+   * → GET /api/capabilities
+   */
   useEffect(() => {
     if (!model) {
       setVisionSupported(false);
@@ -144,8 +199,19 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
   }, [model]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const isAtBottomRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    // Tolerance of 100px to still be considered "at bottom"
+    isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
+  }, []);
+
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (isAtBottomRef.current) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    }
   }, [messages, status]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -186,6 +252,13 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
     setUploadError(null);
   }, []);
 
+  /*
+   * ── Message & File Submission ──────────────────────────────────
+   * Handles creating the conversation (if needed), uploading files,
+   * and dispatching the message to useChat.
+   * -> POST /api/conversations (if new)
+   * -> POST /api/upload (if files are attached)
+   */
   const submit = useCallback(async () => {
     const text = input.trim();
     if ((!text && stagedFiles.length === 0) || !model || status !== 'ready' || creating || uploading) return;
@@ -245,6 +318,9 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
       pendingAttachmentIds.current = [];
     }
 
+    // Force scroll to bottom on user input
+    isAtBottomRef.current = true;
+
     // Send the message
     sendMessage({ text: text || '(see attached files)' });
 
@@ -260,18 +336,18 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
 
   // When messages change, reconcile pending attachments with actual message IDs
   useEffect(() => {
-    setMessageAttachments((prev) => {
-      if (!prev['__pending__']) return prev;
-      // Find the latest user message that doesn't already have attachments
-      const lastUserMsg = [...messages].reverse().find(
-        (m) => m.role === 'user' && !prev[m.id],
-      );
-      if (lastUserMsg) {
-        const { __pending__, ...rest } = prev;
-        return { ...rest, [lastUserMsg.id]: __pending__ };
-      }
-      return prev;
-    });
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role === 'user' && pendingAttachmentIds.current.length > 0) {
+      setMessageAttachments((prev) => {
+        if (!prev['__pending__']) return prev; // bail out if nothing to reconcile
+        const newMap = { ...prev };
+        newMap[lastMsg.id] = newMap['__pending__'];
+        delete newMap['__pending__'];
+        pendingAttachmentIds.current = [];
+        return newMap;
+      });
+    }
   }, [messages]);
 
   const busy = status === 'streaming' || status === 'submitted';
@@ -282,6 +358,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
   const IMAGE_TYPES = '.png,.jpg,.jpeg,.webp,.gif';
   const ACCEPTED_TYPES = visionSupported ? `${DOC_TYPES},${IMAGE_TYPES}` : DOC_TYPES;
 
+  // ── Input & Attachment Components ──────────────────────────────
   const fileInput = (
     <input
       ref={fileInputRef}
@@ -298,37 +375,44 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
       type="button"
       onClick={() => fileInputRef.current?.click()}
       disabled={!model || stagedFiles.length >= 5}
-      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      className="bg-[#ededed] dark:bg-neutral-800 flex items-center justify-center rounded-[100px] size-[32px] text-black dark:text-white hover:bg-[#e0e0e0] dark:hover:bg-neutral-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
       title={visionSupported ? 'Attach files or images' : 'Attach files (this model can’t read images)'}
     >
-      <Paperclip className="h-4 w-4" />
+      <Plus className="size-[14px]" />
     </button>
   );
 
   const modelPicker = (
-    <div className="flex items-center gap-2">
-      <Select value={model} onValueChange={(v) => setModel(v as string)} disabled={loadingModels || models.length === 0}>
-        <SelectTrigger className="min-w-48">
-          <SelectValue placeholder={loadingModels ? 'Loading models…' : models.length ? 'Select model' : 'No models available'} />
-        </SelectTrigger>
-        <SelectContent>
+    <div className="flex items-center gap-[10px]">
+      <div className="relative flex items-center gap-[4px] px-[10px] py-[6px] rounded-[100px] hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer">
+        <Sparkles className="size-[12px] text-neutral-600 dark:text-neutral-300" />
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          disabled={loadingModels || models.length === 0}
+          className="appearance-none bg-transparent pr-4 text-[12px] font-medium text-black dark:text-white outline-none cursor-pointer disabled:opacity-50"
+        >
           {models.map((m) => (
-            <SelectItem key={m} value={m}>
+            <option key={m} value={m} className="text-black">
               {m}
-            </SelectItem>
+            </option>
           ))}
-        </SelectContent>
-      </Select>
+          {models.length === 0 && (
+            <option value="" className="text-black">
+              {loadingModels ? 'Loading...' : 'No models'}
+            </option>
+          )}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-1 size-[10px] text-neutral-500" />
+      </div>
       {(modelsError || models.length === 0) && !loadingModels && (
-        <Button
+        <button
           type="button"
-          variant="outline"
-          size="sm"
           onClick={fetchModels}
-          className="h-8 px-2 text-xs border-dashed text-amber-600 dark:text-amber-400 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+          className="text-[11px] text-amber-600 hover:underline"
         >
           Retry
-        </Button>
+        </button>
       )}
     </div>
   );
@@ -346,46 +430,75 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
   };
 
   const composerContent = (
-    <>
-      <Textarea
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={
-          loadingModels
-            ? 'Loading models…'
-            : modelsError
-            ? 'Cannot send message: check Ollama connection'
-            : model
-            ? 'Send a message…'
-            : 'Pick a model first'
-        }
-        disabled={!model || loadingModels}
-        rows={isEmpty ? 3 : 2}
-        className={`${isEmpty ? 'min-h-[72px]' : 'min-h-[44px]'} resize-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0`}
-      />
-      <StagedFiles files={stagedFiles} onRemove={removeStagedFile} />
-      {uploadError && (
-        <div className="px-1 pt-1 text-xs text-destructive">{uploadError}</div>
-      )}
-      <div className="flex items-center justify-between pt-2">
-        <div className="flex items-center gap-2">
-          {modelPicker}
-          {attachButton}
-        </div>
-        {busy ? (
-          <Button type="button" variant="outline" onClick={() => stop()}>
-            Stop
-          </Button>
-        ) : (
-          <Button type="submit" disabled={!hasContent || !model || creating || uploading}>
-            {uploading ? 'Uploading…' : 'Send'}
-          </Button>
+    <div className="bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-[0px_4px_16px_rgba(0,0,0,0.03)] flex flex-col gap-[16px] min-h-[124px] items-start p-[16px] rounded-[16px] w-[768px] max-w-full justify-between transition-all mx-auto">
+      <div className="flex flex-col w-full gap-2">
+        <textarea
+          ref={textareaRef}
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value);
+            e.target.style.height = 'auto';
+            e.target.style.height = `${Math.min(e.target.scrollHeight, 300)}px`;
+          }}
+          onKeyDown={onKeyDown}
+          placeholder={
+            loadingModels
+              ? 'Loading models…'
+              : modelsError
+              ? 'Cannot send message: check Ollama connection'
+              : model
+              ? 'Write a Message'
+              : 'Pick a model first'
+          }
+          disabled={!model || loadingModels}
+          rows={isEmpty ? 3 : 1}
+          className="w-full resize-none bg-transparent text-[14px] font-medium text-black dark:text-white placeholder:text-[#8e8e93] outline-none border-0 shadow-none focus-visible:ring-0 p-0 max-h-[300px] overflow-y-auto"
+        />
+        <StagedFiles files={stagedFiles} onRemove={removeStagedFile} />
+        {uploadError && (
+          <div className="text-xs text-destructive">{uploadError}</div>
         )}
       </div>
-    </>
+
+      <div className="flex items-end justify-between w-full">
+        <div className="flex items-center gap-[8px]">
+          {attachButton}
+          {activeProjectId && (
+            <div className="bg-[#ededed] dark:bg-neutral-800 flex h-[32px] items-center px-[10px] py-[6px] rounded-[100px]">
+              <span className="text-[12px] font-medium text-[#111827] dark:text-neutral-100 whitespace-nowrap">
+                {projectName || 'Project Workspace'}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-[10px]">
+          {modelPicker}
+          {busy ? (
+            <button
+              type="button"
+              onClick={() => stop()}
+              className="bg-[#0f172a] text-white flex items-center justify-center rounded-[100px] size-[36px] hover:opacity-90 active:scale-95 transition-all"
+              title="Stop generating"
+            >
+              <Square className="size-[12px]" fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!hasContent || !model || creating || uploading}
+              className="bg-[#9ca3af] text-white flex items-center justify-center rounded-[100px] size-[36px] hover:bg-[#0f172a] hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ backgroundColor: (hasContent && model && !creating && !uploading) ? '#0f172a' : undefined }}
+              title="Send Message"
+            >
+              <ArrowUp className="size-[14px]" />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 
+  // ── JSX Return (Empty vs Populated Chat) ────────────────────────
   if (isEmpty) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-4">
@@ -405,9 +518,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
             </div>
           )}
           <form onSubmit={onSubmit}>
-            <div className="rounded-2xl border border-border bg-muted/40 p-4 shadow-sm">
-              {composerContent}
-            </div>
+            {composerContent}
           </form>
         </div>
       </div>
@@ -417,7 +528,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
   return (
     <div className="flex h-full flex-col">
       {fileInput}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
           {messages.map((m, i) => (
             <MessageBubble
@@ -425,20 +536,34 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
               message={m}
               isThinking={busy && i === messages.length - 1 && m.role === 'assistant'}
               attachments={messageAttachments[m.id]}
+              isProjectThread={!!activeProjectId}
             />
           ))}
           {status === 'submitted' && (
-            <div className="text-sm text-muted-foreground">…</div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="inline-flex gap-1">
+                <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:0ms]" />
+                <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:150ms]" />
+                <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:300ms]" />
+              </span>
+              <span>Thinking…</span>
+            </div>
           )}
           {error && (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              Something went wrong. Check the dev console.
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              <p className="font-medium mb-1">Failed to get a response</p>
+              <p className="text-xs text-destructive/80 leading-relaxed">
+                {error.message || 'The model did not return a response. This can happen if the model is too slow, ran out of memory, or is not running.'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                Try sending your message again, or switch to a smaller/faster model.
+              </p>
             </div>
           )}
         </div>
       </div>
 
-      <form className="shrink-0 bg-background px-4 py-3" onSubmit={onSubmit}>
+      <form className={cn("shrink-0 px-4 py-3", !activeProjectId && "bg-background")} onSubmit={onSubmit}>
         <div className="mx-auto max-w-3xl">
           {modelsError && (
             <div className="mb-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-600 dark:text-amber-400">
@@ -446,9 +571,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
               <span className="text-muted-foreground">{modelsError}</span>
             </div>
           )}
-          <div className="rounded-2xl border border-border bg-muted/40 p-4 shadow-sm">
-            {composerContent}
-          </div>
+          {composerContent}
         </div>
       </form>
     </div>
@@ -461,10 +584,12 @@ function MessageBubble({
   message,
   isThinking,
   attachments,
+  isProjectThread,
 }: {
   message: MessageType;
   isThinking: boolean;
   attachments?: AttachmentInfo[];
+  isProjectThread?: boolean;
 }) {
   const isUser = message.role === 'user';
   const text = message.parts
@@ -475,6 +600,35 @@ function MessageBubble({
     .map((p) => (p as { type: 'reasoning'; text: string }).text)
     .join('');
 
+  if (isProjectThread) {
+    if (isUser) {
+      return (
+        <div className="flex justify-end w-full mb-2">
+          <div className="bg-gradient-to-l from-[rgba(249,241,242,0.51)] to-[#f1f6f9] p-[20px] rounded-[12px] max-w-[85%]">
+            {attachments && attachments.length > 0 && (
+              <div className="mb-3">
+                <AttachmentBadges attachments={attachments} />
+              </div>
+            )}
+            <div className="whitespace-pre-wrap text-[16px] font-medium text-black tracking-[0.64px] leading-normal">
+              {text}
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      return (
+        <div className="flex justify-start w-full">
+          <div className="p-[20px] w-full text-[16px] font-medium text-black dark:text-white tracking-[0.64px] leading-normal">
+            {reasoning && <ThinkingBlock text={reasoning} active={isThinking} />}
+            <Markdown content={text} className="text-[16px] text-black dark:text-white tracking-[0.64px] font-medium leading-[normal]" />
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // Fallback / Quick Chat UI
   return (
     <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
       <div

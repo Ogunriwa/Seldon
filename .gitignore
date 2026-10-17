@@ -34,3 +34,10 @@ data/
 
 # vercel
 .vercel
+
+# Documentation & session handoffs
+docs/
+
+# golden-master prompt captures (temporary)
+.prompt-capture/
+app/api/chat/route.js

@@ -1,5 +1,7 @@
 import { extractText as extractPdfText, getDocumentProxy } from 'unpdf';
 
+// ── Constants & Configuration ──────────────────────────────────────────
+// File extensions and MIME types considered as extractable text formats.
 const CODE_EXTENSIONS = new Set([
   '.py', '.ts', '.js', '.jsx', '.tsx', '.rs', '.go', '.java',
   '.c', '.cpp', '.h', '.rb', '.sh', '.yaml', '.yml', '.toml',
@@ -26,6 +28,9 @@ const TEXT_MIME_TYPES = new Set([
   'application/toml',
 ]);
 
+// ── Utility Functions ───────────────────────────────────────────────
+// Helper functions to identify file types and determine if their text
+// can be reliably extracted based on extension or MIME type.
 function getExtension(filename: string): string {
   const lastDot = filename.lastIndexOf('.');
   if (lastDot === -1) return '';
@@ -53,6 +58,12 @@ function isTextExtractable(mediaType: string, filename: string): boolean {
   return false;
 }
 
+/*
+ * ── Text Extraction Core ──────────────────────────────────────────
+ * Main utility for extracting text from uploaded files/buffers.
+ * Handles PDFs specifically via unpdf, falls back to utf-8 string 
+ * conversion for known text/code types, or returns an error.
+ */
 export async function extractText(
   buffer: Buffer,
   filename: string,

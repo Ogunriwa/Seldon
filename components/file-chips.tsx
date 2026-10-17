@@ -1,5 +1,6 @@
 'use client';
 
+// ── Imports ──────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react';
 import { FileText, FileCode, FileSpreadsheet, File, X, AlertCircle } from 'lucide-react';
 
@@ -13,6 +14,7 @@ export type AttachmentInfo = {
   error?: string | null;
 };
 
+// ── Helpers ──────────────────────────────────────────────────────────
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -40,7 +42,11 @@ function FileIcon({ mediaType, filename }: { mediaType: string; filename: string
   return <File className="h-4 w-4 shrink-0" />;
 }
 
-/** Staged files in the composer — removable before sending */
+/*
+ * ── StagedFiles Component ─────────────────────────────────────────
+ * Displays files currently selected in the composer but not yet sent.
+ * Manages local object URLs for image previews to prevent memory leaks.
+ */
 export function StagedFiles({
   files,
   onRemove,
@@ -94,7 +100,11 @@ export function StagedFiles({
   );
 }
 
-/** Attachment badges shown on sent messages */
+/*
+ * ── AttachmentBadges Component ────────────────────────────────────
+ * Displays files that have already been attached and sent with a message.
+ * Fetches small thumbnails using base64 data if available.
+ */
 export function AttachmentBadges({
   attachments,
 }: {
@@ -106,7 +116,11 @@ export function AttachmentBadges({
     <div className="flex flex-wrap gap-1.5 mb-2">
       {attachments.map((a) => {
         const isImage = isImageType(a.mediaType, a.filename);
-        const thumb = isImage && a.data ? `data:${a.mediaType};base64,${a.data}` : null;
+        const thumb = isImage
+          ? a.data
+            ? `data:${a.mediaType};base64,${a.data}`
+            : `/api/attachments/${a.id}`
+          : null;
 
         return (
           <div

@@ -1,4 +1,20 @@
+/**
+ * API Route: /api/models
+ * Methods: GET
+ *
+ * Called by:
+ *   - components/chat.tsx                    (GET — populate model dropdown on mount)
+ *   - components/home/home-view.tsx          (GET — populate Home Screen composer model picker)
+ *   - components/projects/tabs/threads-tab.tsx (GET — populate project composer model picker)
+ *   - components/projects/agents/agent-drawer.tsx (GET — populate agent model dropdown)
+ *
+ * Proxies Ollama's /api/tags endpoint to discover locally available models.
+ * Returns a sorted list of model name strings. Handles Ollama being offline
+ * gracefully with a 503 status and descriptive error message.
+ */
 import { OLLAMA_BASE } from '@/lib/ollama';
+
+/** Import Ollama */
 
 type OllamaTag = { name: string; model: string };
 

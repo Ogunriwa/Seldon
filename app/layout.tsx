@@ -1,23 +1,28 @@
+// ── Imports & Setup ──────────────────────────────────────────
+// Next.js metadata and global stylesheet configurations
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import "highlight.js/styles/github-dark.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
   subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
+// ── App Metadata ──────────────────────────────────────────────
+// Defines the global title and description for the document head
 export const metadata: Metadata = {
   title: "Seldon",
   description: "Self-hosted UI for Ollama",
 };
 
+// ── Root Layout ──────────────────────────────────────────────
+/* 
+ * The top-level HTML structure for the Next.js application.
+ * Injects global fonts, basic body styling, and renders child pages.
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -26,7 +31,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${inter.variable} h-full antialiased font-sans`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

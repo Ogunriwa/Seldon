@@ -1,9 +1,29 @@
+/**
+ * API Route: /api/upload
+ * Methods: POST (multipart/form-data)
+ *
+ * Called by:
+ *   - components/chat.tsx    (POST — upload files attached to a chat message)
+ *
+ * Handles file uploads for chat conversations. Accepts up to 5 files (10MB each).
+ * Processing pipeline per file:
+ *   1. Validate size (≤10MB) and MIME type (text, code, PDF, JSON, images)
+ *   2. For images: store as base64 in `data` column for vision model forwarding
+ *   3. For documents: extract text via lib/extract.ts into `extractedText` column
+ *   4. Persist to `attachments` table with messageId=null (linked later by /api/chat)
+ *
+ * Partial success is allowed — individual file errors don't block other uploads.
+ */
 import { db } from '@/lib/db/client';
 import { attachments, conversations } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { generateId } from 'ai';
 import { extractText } from '@/lib/extract';
 
+import path from 'path';
+import fs from 'fs';
+
+// ── Upload Limits & File Type Configuration ──────────────────────────────
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const MAX_FILES = 5;
 
@@ -14,8 +34,8 @@ const ALLOWED_MIME_PREFIXES = [
   'application/pdf',
 ];
 
-// Image types handled separately — stored as base64 for vision models, not
-// text-extracted.
+// Image types handled separately — stored as raw files on disk in data/uploads/
+// for vision models, not text-extracted.
 const IMAGE_MIME_TYPES = new Set([
   'image/png',
   'image/jpeg',
@@ -58,7 +78,15 @@ function getExtension(filename: string): string {
 }
 
 export async function POST(req: Request) {
-  const formData = await req.formData();
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return Response.json(
+      { error: 'Invalid form data' },
+      { status: 400 },
+    );
+  }
   const conversationId = formData.get('conversationId');
 
   if (!conversationId || typeof conversationId !== 'string') {
@@ -109,8 +137,12 @@ export async function POST(req: Request) {
     sizeBytes: number;
     extractedText: string | null;
     data: string | null;
+    filePath: string | null;
     error: string | null;
   }> = [];
+
+  const uploadsDir = path.join(process.cwd(), 'data', 'uploads');
+  await fs.promises.mkdir(uploadsDir, { recursive: true });
 
   for (const file of files) {
     const id = generateId();
@@ -127,6 +159,7 @@ export async function POST(req: Request) {
         sizeBytes,
         extractedText: null,
         data: null,
+        filePath: null,
         error: `File too large (${(sizeBytes / 1024 / 1024).toFixed(1)} MB). Maximum is 10 MB.`,
       });
       continue;
@@ -141,6 +174,7 @@ export async function POST(req: Request) {
         sizeBytes,
         extractedText: null,
         data: null,
+        filePath: null,
         error: `Unsupported file type: ${mediaType}. Upload text, code, PDF, image, CSV, or JSON files.`,
       });
       continue;
@@ -151,15 +185,20 @@ export async function POST(req: Request) {
       const buffer = Buffer.from(arrayBuffer);
 
       if (isImage(mediaType, filename)) {
-        // Images: store base64, no text extraction. Sent to vision models as
-        // image parts at chat time.
+        // Option A: Write file to data/uploads/${id}${ext}
+        const ext = getExtension(filename);
+        const diskPath = path.join(uploadsDir, `${id}${ext}`);
+        const relPath = path.join('data', 'uploads', `${id}${ext}`);
+        await fs.promises.writeFile(diskPath, buffer);
+
         results.push({
           id,
           filename,
           mediaType,
           sizeBytes,
           extractedText: null,
-          data: buffer.toString('base64'),
+          data: null,
+          filePath: relPath,
           error: null,
         });
       } else {
@@ -171,6 +210,7 @@ export async function POST(req: Request) {
           sizeBytes,
           extractedText: text,
           data: null,
+          filePath: null,
           error,
         });
       }
@@ -182,6 +222,7 @@ export async function POST(req: Request) {
         sizeBytes,
         extractedText: null,
         data: null,
+        filePath: null,
         error: 'An unexpected error occurred while processing this file.',
       });
     }
@@ -199,6 +240,7 @@ export async function POST(req: Request) {
       sizeBytes: r.sizeBytes,
       extractedText: r.extractedText,
       data: r.data,
+      filePath: r.filePath,
       error: r.error,
       createdAt: new Date(),
     });

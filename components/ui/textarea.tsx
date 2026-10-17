@@ -2,6 +2,9 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+// ── Textarea Primitive ─────────────────────────────────────────────
+// A resizable textarea for multiline text input. Used in chat composers
+// and settings forms, with consistent app-wide styling.
 function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (
     <textarea
