@@ -15,6 +15,48 @@
       "when": 1779256788812,
       "tag": "0001_young_mother_askani",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1780453668760,
+      "tag": "0002_regular_rage",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1780453748474,
+      "tag": "0003_broad_purifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1780458135535,
+      "tag": "0004_lumpy_fenris",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788406017224,
+      "tag": "0005_chemical_vapor",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791751802455,
+      "tag": "0006_colossal_namor",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792266731705,
+      "tag": "0007_blushing_colossus",
+      "breakpoints": true
     }
   ]
 }

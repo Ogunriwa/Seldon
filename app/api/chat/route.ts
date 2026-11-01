@@ -1,3 +1,10 @@
+/**
+ * API Route: /api/chat
+ * Methods: POST (streaming response)
+ *
+ * Called by:
+ *   - components/chat.tsx    (POST via Vercel AI SDK's DefaultChatTransport)
+ */
 import {
   convertToModelMessages,
   generateId,
@@ -5,41 +12,39 @@ import {
   type UIMessage,
 } from 'ai';
 import { createOllama } from 'ollama-ai-provider-v2';
-import { db } from '@/lib/db/client';
-import { messages as messagesTable, conversations, projects } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { OLLAMA_BASE, getModelCapabilities } from '@/lib/ollama';
 
-export const maxDuration = 60;
+import { buildChatContext } from '@/lib/chat/context';
+import { injectVisionImages } from '@/lib/chat/vision';
+import { persistMessages, persistUserTurn } from '@/lib/chat/persist';
 
-const OLLAMA_BASE = 'http://localhost:11434';
+export const maxDuration = 300; // Increased to allow long contexts to prefill
+
 const ollama = createOllama({ baseURL: `${OLLAMA_BASE}/api` });
-
-async function modelSupportsThinking(modelName: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${OLLAMA_BASE}/api/show`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: modelName }),
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    const template: string = data.template || '';
-    const modelfile: string = data.modelfile || '';
-    return template.toLowerCase().includes('think') || /^RENDERER\s/m.test(modelfile);
-  } catch {
-    return false;
-  }
-}
 
 const chatSchema = z.object({
   messages: z.array(z.any()),
   model: z.string().min(1),
   conversationId: z.string().min(1),
+  pendingAttachmentIds: z.array(z.string()).optional(),
 });
 
+type ChatRequest = {
+  messages: UIMessage[];
+  model: string;
+  conversationId: string;
+  pendingAttachmentIds?: string[];
+};
+
 export async function POST(req: Request) {
-  const body = await req.json();
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: 'Malformed or empty JSON request body.' }, { status: 400 });
+  }
+
   const parsed = chatSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: parsed.error.message }, { status: 400 });
@@ -49,71 +54,56 @@ export async function POST(req: Request) {
     messages,
     model,
     conversationId,
-  }: { messages: UIMessage[]; model: string; conversationId: string } =
-    parsed.data;
+    pendingAttachmentIds,
+  } = parsed.data as ChatRequest;
 
-  let systemPrompt: string | undefined;
-  const convo = await db
-    .select({ projectId: conversations.projectId })
-    .from(conversations)
-    .where(eq(conversations.id, conversationId))
-    .get();
+  try {
+    // 1. Eagerly persist the user's message and link attachments BEFORE inference starts
+    // so prompts are never lost if capability sensing, vision loading, or Ollama streaming fails.
+    await persistUserTurn({ messages, conversationId, pendingAttachmentIds });
 
-  if (convo?.projectId) {
-    const project = await db
-      .select({ instructions: projects.instructions })
-      .from(projects)
-      .where(eq(projects.id, convo.projectId))
-      .get();
-    if (project?.instructions) systemPrompt = project.instructions;
+    const caps = await getModelCapabilities(model);
+    const withImages = caps.vision ? await injectVisionImages(messages, conversationId, pendingAttachmentIds) : messages;
+    const ctx = await buildChatContext({
+      conversationId,
+      messages: withImages,
+      caps,
+      pendingAttachmentIds,
+    });
+
+    const result = streamText({
+      model: ollama(model),
+      system: ctx.system,
+      messages: [...ctx.documentMessages, ...(await convertToModelMessages(ctx.history))],
+      providerOptions: {
+        ollama: { ...(caps.thinking ? { think: true } : {}), options: { num_ctx: ctx.numCtx } },
+      },
+      // Ground-truth telemetry: this is streamText's onFinish, which receives token usage
+      onFinish: ({ totalUsage }) => {
+        const actual = totalUsage.inputTokens;
+        console.info('[chat:context]', JSON.stringify({ model, ...ctx.report, actualInputTokens: actual }));
+        if (actual !== undefined && actual >= ctx.numCtx * 0.95) {
+          console.warn(`[chat:context] input ${actual} >= 95% of num_ctx ${ctx.numCtx}: prompt was likely truncated`);
+        }
+      },
+    });
+
+    result.consumeStream();
+
+    return result.toUIMessageStreamResponse({
+      originalMessages: messages, // full, untrimmed, without synthetic doc messages, so persistence is unaffected
+      generateMessageId: generateId,
+      onFinish: async ({ messages: finalMessages }) => {
+        try {
+          await persistMessages({ finalMessages, conversationId, model, pendingAttachmentIds });
+        } catch (err) {
+          console.error('[chat:persist-error] Failed to persist assistant response:', err);
+        }
+      },
+    });
+  } catch (err) {
+    console.error('[chat:error] Pre-stream pipeline failed:', err);
+    const message = err instanceof Error ? err.message : 'Failed to start chat stream.';
+    return Response.json({ error: message }, { status: 500 });
   }
-
-  const think = await modelSupportsThinking(model);
-
-  const result = streamText({
-    model: ollama(model),
-    system: systemPrompt,
-    messages: await convertToModelMessages(messages),
-    providerOptions: { ollama: think ? { think: true } : {} },
-  });
-
-  result.consumeStream();
-
-  return result.toUIMessageStreamResponse({
-    originalMessages: messages,
-    onFinish: async ({ messages: finalMessages }) => {
-      const existingIds = new Set(
-        (
-          await db
-            .select({ id: messagesTable.id })
-            .from(messagesTable)
-            .where(eq(messagesTable.conversationId, conversationId))
-        ).map((r) => r.id),
-      );
-
-      for (const msg of finalMessages) {
-        const id = msg.id || generateId();
-        if (existingIds.has(id)) continue;
-        existingIds.add(id);
-
-        const text = msg.parts
-          .map((p) => (p.type === 'text' ? p.text : ''))
-          .join('');
-
-        await db.insert(messagesTable).values({
-          id,
-          conversationId,
-          role: msg.role,
-          content: text,
-          model: msg.role === 'assistant' ? model : null,
-          createdAt: new Date(),
-        });
-      }
-
-      await db
-        .update(conversations)
-        .set({ updatedAt: new Date() })
-        .where(eq(conversations.id, conversationId));
-    },
-  });
 }

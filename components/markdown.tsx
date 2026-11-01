@@ -1,9 +1,21 @@
-import ReactMarkdown from 'react-markdown';
+import { memo } from 'react';
+import ReactMarkdown, { type Options } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
 
-export function Markdown({
+// Hoisted to module scope so ReactMarkdown never rebuilds its unified pipeline on re-renders,
+// and `detect: false` avoids running highlight.js auto-detection across ~190 grammars on every streamed token.
+const REMARK_PLUGINS: Options['remarkPlugins'] = [remarkGfm];
+const REHYPE_PLUGINS: Options['rehypePlugins'] = [
+  [rehypeHighlight, { detect: false, ignoreMissing: true }],
+];
+
+// ── Markdown Component ───────────────────────────────────────────
+// A wrapper around react-markdown configured with GitHub Flavored Markdown (remark-gfm)
+// and syntax highlighting (rehype-highlight). It applies custom prose styles via Tailwind 
+// to ensure chat messages render beautifully, safely, and consistently across the app.
+export const Markdown = memo(function Markdown({
   content,
   className,
 }: {
@@ -36,11 +48,11 @@ export function Markdown({
       )}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={REHYPE_PLUGINS}
       >
         {content}
       </ReactMarkdown>
     </div>
   );
-}
+});
