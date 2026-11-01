@@ -41,3 +41,16 @@ docs/
 # golden-master prompt captures (temporary)
 .prompt-capture/
 app/api/chat/route.js
+
+# package manager store
+.pnpm-store/
+
+# test output
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+coverage/
+
+# logs (catch-all)
+*.log

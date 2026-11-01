@@ -1,8 +1,8 @@
 allowBuilds:
   better-sqlite3: true
   esbuild: true
-  msw: set this to true or false
-  sharp: set this to true or false
+  msw: false
+  sharp: false
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
