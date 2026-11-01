@@ -2,10 +2,11 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { proxy } from '@/proxy';
 import { db } from '@/lib/db/client';
-import { conversations, messages as messagesTable, attachments } from '@/lib/db/schema';
+import { projects, libraries, conversations, messages as messagesTable, attachments } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { generateId } from 'ai';
 import { persistUserTurn, persistMessages } from '@/lib/chat/persist';
+import { buildChatContext } from '@/lib/chat/context';
 
 describe('CSRF & Cross-Origin Proxy Guard (proxy.ts)', () => {
   it('blocks state-changing POST requests with Sec-Fetch-Site: cross-site with 403', () => {
@@ -166,5 +167,67 @@ describe('Eager User Turn & Stream Completion Persistence (persist.ts)', () => {
     expect(assistantRow?.content).toBe('The file says Hello Seldon.');
     expect(assistantRow?.reasoning).toBe('Reading the attachment...');
     expect(assistantRow?.model).toBe('gemma4:e4b');
+  });
+
+  it('loads uploaded project library documents into the sandwich prompt via buildChatContext', async () => {
+    const projectId = `test-proj-${generateId()}`;
+    const convId = `test-conv-${generateId()}`;
+    const now = new Date();
+
+    try {
+      await db.insert(projects).values({
+        id: projectId,
+        name: 'Testing Ground',
+        description: 'Integration test for library context assembly',
+        instructions: 'Use library files to answer.',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await db.insert(libraries).values({
+        id: `test-lib-${generateId()}`,
+        projectId,
+        filename: 'blue-heron.txt',
+        mediaType: 'text/plain',
+        sizeBytes: 29,
+        extractedText: 'Project code is BLUE-HERON-42',
+        type: 'reference',
+        includeInContext: true,
+        addedBy: 'User',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await db.insert(conversations).values({
+        id: convId,
+        title: 'Context Recall Thread',
+        projectId,
+        model: 'gemma4:e4b',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const ctx = await buildChatContext({
+        conversationId: convId,
+        messages: [
+          {
+            id: `u-${generateId()}`,
+            role: 'user',
+            parts: [{ type: 'text', text: 'What is the project code?' }],
+          },
+        ],
+        caps: { vision: false, thinking: false, contextLength: 32768 },
+      });
+
+      expect(ctx.report.docsIncluded).toBe(1);
+      expect(ctx.documentMessages).toHaveLength(2);
+      expect(ctx.documentMessages[0].role).toBe('user');
+      expect(String(ctx.documentMessages[0].content)).toContain(
+        '<document name="blue-heron.txt" source="library">\nProject code is BLUE-HERON-42\n</document>'
+      );
+      expect(ctx.documentMessages[1].role).toBe('assistant');
+    } finally {
+      await db.delete(projects).where(eq(projects.id, projectId));
+    }
   });
 });
