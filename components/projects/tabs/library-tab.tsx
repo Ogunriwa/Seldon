@@ -480,7 +480,7 @@ export function LibraryTab({
   };
 
   return (
-    <div className="flex flex-col items-start relative size-full">
+    <div className="bg-white dark:bg-neutral-900 rounded-[17px] flex flex-col items-start relative size-full">
       <input
         type="file"
         multiple
@@ -489,12 +489,12 @@ export function LibraryTab({
         className="hidden"
       />
       {/* Header */}
-      <div className="bg-white dark:bg-neutral-900 flex items-center justify-between pb-[20px] pt-[40px] px-[24px] w-full shrink-0">
+      <div className="bg-white dark:bg-neutral-900 flex items-center justify-between pb-[20px] pt-[40px] px-[24px] w-full shrink-0 rounded-t-[17px]">
         <div className="flex flex-col gap-[6px] items-start shrink-0">
           <p className="font-['Inter'] font-bold text-[#111827] dark:text-white text-[20px] m-0">
             Project Library
           </p>
-          <p className="font-['Inter'] font-normal text-[#4b5563] dark:text-neutral-400 text-[14px] m-0 whitespace-nowrap">
+          <p className="hidden xl:block font-['Inter'] font-normal text-[#4b5563] dark:text-neutral-400 text-[14px] m-0 whitespace-nowrap">
             Organize, add and include files and photos to chat
           </p>
         </div>

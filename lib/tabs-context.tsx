@@ -2,7 +2,7 @@
 
 // ── Imports & React Context ────────────────────────────────────
 // Global state management for workspace tabs
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
 // ── Types & Definitions ─────────────────────────────────────────
@@ -18,6 +18,7 @@ type TabsContextType = {
   activeTabId: string;
   openTab: (tab: Omit<Tab, 'id'> & { id?: string }) => void;
   closeTab: (id: string, e?: React.MouseEvent) => void;
+  renameTab: (idOrHref: string, title: string) => void;
   setActiveTabId: (id: string) => void;
 };
 
@@ -106,6 +107,23 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Updates the title of an existing tab in-place without navigating
+  const renameTab = useCallback((idOrHref: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setTabs((prev) => {
+      let changed = false;
+      const next = prev.map((t) => {
+        if ((t.id === idOrHref || t.href === idOrHref) && t.title !== trimmed) {
+          changed = true;
+          return { ...t, title: trimmed };
+        }
+        return t;
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
   // Closes a tab and falls back gracefully to adjacent tabs or Home
   const closeTab = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -129,6 +147,7 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
         activeTabId,
         openTab,
         closeTab,
+        renameTab,
         setActiveTabId,
       }}
     >

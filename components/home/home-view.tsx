@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, ArrowRight, ArrowUp, ChevronDown } from 'lucide-react';
 import { useTabs } from '@/lib/tabs-context';
+import { useSidebar } from '@/lib/sidebar-context';
 import { StartProjectModal } from '@/components/projects/start-project-modal';
 import {
   Dialog,
@@ -32,6 +33,7 @@ export function HomeView() {
   const [comingSoonFeature, setComingSoonFeature] = useState<'Agents' | 'Playground' | null>(null);
   const router = useRouter();
   const { openTab } = useTabs();
+  const { isOpen } = useSidebar();
 
   // ── Effects & Data Fetching ───────────────────────────────────
   /*
@@ -106,13 +108,24 @@ export function HomeView() {
 
   // ── Render Dashboard UI ───────────────────────────────────────
   return (
-    <div className="relative flex min-h-full h-full w-full flex-col items-center justify-center px-6 py-8">
-      
-      {/* Centered Content Cluster (Figma node 733:3263) */}
-      <div className="flex flex-col items-center justify-center gap-[40px] w-full max-w-2xl my-auto">
-        
-        {/* 3 Quick Entry Cards (Figma node 733:3424) */}
-        <div className="flex flex-wrap items-center justify-center gap-[32px] sm:gap-[48px] w-full pb-[48px] pt-[10px] select-none">
+    <div
+      className={`relative flex min-h-full h-full w-full flex-col items-center justify-center ${
+        isOpen ? 'p-[10px] xl:px-[40px]' : 'px-[40px] py-[10px]'
+      }`}
+    >
+      <div className="flex flex-1 flex-col items-center justify-center p-[10px] w-full">
+        {/* Centered Content Cluster (Figma node 733:3263 / 859:2127 / 859:2277) */}
+        <div
+          className={`flex flex-col items-center justify-center gap-[40px] my-auto ${
+            isOpen ? 'w-full max-w-[533px] xl:max-w-[653px]' : 'w-full max-w-[653px]'
+          }`}
+        >
+          {/* 3 Quick Entry Cards (Figma node 733:3424 / 859:2128 / 859:2278) */}
+          <div
+            className={`flex flex-nowrap items-end justify-center w-full pb-[86px] pt-[10px] select-none ${
+              isOpen ? 'gap-[40px] xl:gap-[100px]' : 'gap-[100px]'
+            }`}
+          >
         {/* Projects Card (Figma node 733:3425) */}
         <div 
           onClick={() => navigateTo('/projects', 'Projects')}
@@ -205,8 +218,8 @@ export function HomeView() {
         </div>
       </div>
 
-      {/* Hero Section (Figma node 733:3286) */}
-      <div className="flex items-end justify-center gap-[40px] text-left select-none">
+      {/* Hero Section (Figma node 733:3286 / 859:2162 / 859:2312) */}
+      <div className="flex items-end justify-center xl:justify-start gap-[40px] w-full text-left select-none">
         {/* Authentic Mentat Prism Logo (Figma node 733:3088: 27.96px x 74.15px) */}
         <div className="relative w-[28px] h-[75px] shrink-0" aria-hidden="true">
           <svg
@@ -401,11 +414,11 @@ export function HomeView() {
         </h1>
       </div>
 
-      {/* Floating Composer Card (Figma node 733:3313) */}
-      <div className="w-full max-w-2xl">
+      {/* Floating Composer Card (Figma node 733:3313 / 859:2189 / 859:2339) */}
+      <div className="w-full">
         <form
           onSubmit={handleSendMessage}
-          className="group relative flex flex-col rounded-[16px] border-[1.2px] border-[#e5e7eb] dark:border-neutral-800 bg-white dark:bg-neutral-900 p-[16px] gap-[20px] shadow-[0px_4px_4px_rgba(0,0,0,0.03)] transition-all focus-within:border-neutral-400 dark:focus-within:border-neutral-600 focus-within:shadow-md"
+          className="group relative flex flex-col justify-between h-[124px] rounded-[16px] border-[1.2px] border-[#e5e7eb] dark:border-neutral-800 bg-white dark:bg-neutral-900 p-[16px] gap-[20px] shadow-[0px_4px_4px_rgba(0,0,0,0.03)] transition-all focus-within:border-neutral-400 dark:focus-within:border-neutral-600 focus-within:shadow-md"
         >
           <textarea
             value={message}
@@ -469,6 +482,7 @@ export function HomeView() {
             </div>
           </div>
         </form>
+      </div>
       </div>
       </div>
 

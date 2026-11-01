@@ -116,7 +116,7 @@ export async function DELETE(
     for (const f of filesToDelete) {
       if (f.filePath) {
         try {
-          const fullPath = path.resolve(process.cwd(), f.filePath);
+          const fullPath = path.resolve(/*turbopackIgnore: true*/ process.cwd(), f.filePath);
           if (fs.existsSync(fullPath)) {
             await fs.promises.unlink(fullPath);
           }

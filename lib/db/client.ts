@@ -6,7 +6,7 @@ import { mkdirSync } from 'fs';
 
 // ── Database Initialization ──────────────────────────────────────────
 // Ensure the data directory exists before attempting to connect to SQLite.
-const dbPath = path.join(process.cwd(), 'data', 'app.db');
+const dbPath = process.env.SELDON_DB_PATH || path.join(process.cwd(), 'data', 'app.db');
 mkdirSync(path.dirname(dbPath), { recursive: true });
 
 // ── SQLite Client Configuration ──────────────────────────────────────

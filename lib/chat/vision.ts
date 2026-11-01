@@ -52,7 +52,7 @@ export async function injectVisionImages(messages: UIMessage[], conversationId: 
               try {
                 const absPath = path.isAbsolute(img.filePath)
                   ? img.filePath
-                  : path.join(process.cwd(), img.filePath);
+                  : path.join(/*turbopackIgnore: true*/ process.cwd(), img.filePath);
                 const buf = await fs.promises.readFile(absPath);
                 base64 = buf.toString('base64');
               } catch (e) {

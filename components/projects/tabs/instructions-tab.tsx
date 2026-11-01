@@ -89,21 +89,21 @@ export function InstructionsTab({
   );
 
   return (
-    <div className="flex flex-col items-start relative size-full">
-      {/* Header — same pattern as Library/Memories, no button */}
-      <div className="bg-white dark:bg-neutral-900 flex items-center justify-between pb-[20px] pt-[40px] px-[24px] w-full shrink-0">
+    <div className="bg-white dark:bg-neutral-900 rounded-[17px] flex flex-col items-start relative size-full">
+      {/* Header — compact 16px Medium at 768px (Figma 859:3620 / 859:3491), 20px Bold + subtitle on Desktop */}
+      <div className="bg-white dark:bg-neutral-900 flex items-center justify-between pb-[10px] xl:pb-[20px] pt-[40px] px-[20px] xl:px-[24px] w-full shrink-0 rounded-t-[17px]">
         <div className="flex flex-col gap-[6px] items-start shrink-0">
-          <p className="font-['Inter'] font-bold text-[#111827] dark:text-white text-[20px] m-0">
+          <p className="font-['Inter'] font-medium xl:font-bold text-black xl:text-[#111827] dark:text-white text-[16px] xl:text-[20px] m-0">
             Project Instructions
           </p>
-          <p className="font-['Inter'] font-normal text-[#4b5563] dark:text-neutral-400 text-[14px] m-0">
+          <p className="hidden xl:block font-['Inter'] font-normal text-[#4b5563] dark:text-neutral-400 text-[14px] m-0">
             Define how Seldon assists you across all threads in this project
           </p>
         </div>
       </div>
 
       {/* Instructions Content Area */}
-      <div className="flex flex-col items-start px-[24px] pb-[40px] w-full flex-1 min-h-0">
+      <div className="flex flex-col items-start px-[20px] xl:px-[24px] pb-[40px] w-full flex-1 min-h-0">
         <div className="flex flex-col gap-[10px] items-start w-full flex-1 min-h-0">
 
           {/* Text Box — gradient border when editing, plain border when viewing */}

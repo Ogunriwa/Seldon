@@ -30,11 +30,11 @@ import {
  */
 export function SideNav() {
   // Global sidebar and tab states
-  const { isOpen, toggleSidebar } = useSidebar();
+  const { isOpen, toggleSidebar, handleHoverEnter, handleHoverLeave } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
   const { openTab } = useTabs();
-  const [comingSoonFeature, setComingSoonFeature] = useState<'Agents' | 'Playground' | null>(null);
+  const [comingSoonFeature, setComingSoonFeature] = useState<'Agents' | 'Playground' | 'Artifacts' | null>(null);
 
   // ── Quick Chats Accordion State ──────────────────────────────
   // isChatsOpen: whether the Chats accordion is expanded.
@@ -114,7 +114,11 @@ export function SideNav() {
 
   // ── Render Sidebar Layout ────────────────────────────────────
   return (
-    <aside className="relative flex h-full w-[280px] shrink-0 flex-col bg-white border-r border-[rgba(0,0,0,0.12)] px-[12px] py-[16px] gap-[16px] select-none transition-all z-20">
+    <aside
+      onMouseEnter={handleHoverEnter}
+      onMouseLeave={handleHoverLeave}
+      className="relative flex h-full w-[196px] xl:w-[280px] shrink-0 flex-col bg-white border-r border-[rgba(0,0,0,0.12)] px-[12px] py-[16px] gap-[16px] select-none transition-all z-20"
+    >
       
       {/* Top Bar: Search & Collapse Header */}
       <div className="flex items-center justify-between px-[16px] py-[10px]">
@@ -156,8 +160,8 @@ export function SideNav() {
         <NavItem
           icon={<ArtifactsIcon className="w-5 h-5" />}
           label="Artifacts"
-          active={pathname.startsWith('/artifacts')}
-          onClick={() => navigateTo('/artifacts', 'Artifacts')}
+          active={false}
+          onClick={() => setComingSoonFeature('Artifacts')}
         />
       </div>
 
@@ -258,14 +262,10 @@ export function SideNav() {
               <span className="text-xl">✨</span>
             </div>
             <DialogTitle className="text-lg font-semibold text-neutral-900 text-center">
-              {comingSoonFeature === 'Agents'
-                ? 'Agents coming soon'
-                : 'Playground coming soon'}
+              {comingSoonFeature ? `${comingSoonFeature} coming soon` : ''}
             </DialogTitle>
             <DialogDescription className="text-sm text-neutral-500 text-center">
-              {comingSoonFeature === 'Agents'
-                ? 'Agents coming soon'
-                : 'Playground coming soon'}
+              {comingSoonFeature ? `${comingSoonFeature} coming soon` : ''}
             </DialogDescription>
           </DialogHeader>
           <div className="mt-4 flex justify-center">
@@ -387,3 +387,4 @@ function ArtifactsIcon({ className = "w-5 h-5" }: { className?: string }) {
     </svg>
   );
 }
+

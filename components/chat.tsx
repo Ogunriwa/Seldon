@@ -3,7 +3,7 @@
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import type { UIMessage } from 'ai';
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select';
 import { Markdown } from '@/components/markdown';
 import { StagedFiles, AttachmentBadges, type AttachmentInfo } from '@/components/file-chips';
-import { ChevronDown, Paperclip, Plus, ArrowUp, Sparkles, Square } from 'lucide-react';
+import { ChevronDown, Paperclip, Plus, ArrowUp, ArrowDown, Sparkles, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type ChatProps = {
@@ -130,9 +130,9 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
         if (data.models.length === 0) {
           setModelsError('No models found. Please pull a model first.');
         } else {
-          // If the model is not set, set it to the first available model
+          // If the model is unset or no longer installed locally, fall back to the first available model
           setModel((current) => {
-            if (!current && data.models[0]) {
+            if ((!current || !data.models.includes(current)) && data.models[0]) {
               return data.models[0];
             }
             return current;
@@ -152,8 +152,9 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
     fetchModels();
   }, [fetchModels]);
 
+  const hasDispatchedPendingRef = useRef(false);
   useEffect(() => {
-    if (!id) return;
+    if (!id || hasDispatchedPendingRef.current) return;
     const promptKey = `pending_prompt_${id}`;
     const attachmentsKey = `pending_attachments_${id}`;
     
@@ -161,6 +162,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
     const pendingAttachments = sessionStorage.getItem(attachmentsKey);
     
     if (pending || pendingAttachments) {
+      hasDispatchedPendingRef.current = true;
       if (pending) sessionStorage.removeItem(promptKey);
       if (pendingAttachments) {
         sessionStorage.removeItem(attachmentsKey);
@@ -173,6 +175,67 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
       sendMessage({ text: pending || '(see attached files)' });
     }
   }, [id, sendMessage]);
+
+  /*
+   * ── Hybrid Background Title Generation (Option C) ──────────────
+   * After the first exchange completes (status transitions from streaming -> ready),
+   * requests a concise 3–6 word title from the local model in the background.
+   */
+  const titleGeneratedForRef = useRef<string | null>(
+    id && initialMessages && initialMessages.length >= 2 ? id : null,
+  );
+  const prevStatusRef = useRef(status);
+
+  useEffect(() => {
+    const wasBusy =
+      prevStatusRef.current === 'streaming' || prevStatusRef.current === 'submitted';
+    prevStatusRef.current = status;
+
+    const activeConvId = conversationIdRef.current;
+    if (
+      wasBusy &&
+      status === 'ready' &&
+      activeConvId &&
+      titleGeneratedForRef.current !== activeConvId &&
+      messages.length >= 2
+    ) {
+      const firstUser = messages.find((m) => m.role === 'user');
+      const firstAssistant = messages.find((m) => m.role === 'assistant');
+      const userText = firstUser?.parts
+        .map((p) => (p.type === 'text' ? p.text : ''))
+        .join('')
+        .trim();
+      const assistantText = firstAssistant?.parts
+        .map((p) => (p.type === 'text' ? p.text : ''))
+        .join('')
+        .trim();
+
+      if (userText && assistantText) {
+        titleGeneratedForRef.current = activeConvId;
+        fetch(`/api/conversations/${activeConvId}/title`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userText,
+            assistantText,
+            model: modelRef.current,
+          }),
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data: { ok?: boolean; title?: string } | null) => {
+            if (data?.ok && data.title) {
+              window.dispatchEvent(
+                new CustomEvent('conversation-title-updated', {
+                  detail: { id: activeConvId, title: data.title },
+                }),
+              );
+              window.dispatchEvent(new CustomEvent('conversations-changed'));
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [status, messages]);
 
   /*
    * ── Detect Vision Capabilities ─────────────────────────────────
@@ -198,21 +261,108 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
     };
   }, [model]);
 
+  /*
+   * ── Intent-Based Auto-Scroll & "Jump to Latest" Pill ───────────
+   * Immediately disengages auto-follow on upward wheel, touch drag, or
+   * keyboard navigation so programmatic scrolls never fight trackpad momentum.
+   * Batches programmatic scrolls to at most once per animation frame (RAF).
+   */
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const isAtBottomRef = useRef(true);
+  const rafScrollRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
-  const handleScroll = useCallback(() => {
-    if (!scrollRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    // Tolerance of 100px to still be considered "at bottom"
-    isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
+  const cancelPendingScroll = useCallback(() => {
+    if (rafScrollRef.current !== null) {
+      cancelAnimationFrame(rafScrollRef.current);
+      rafScrollRef.current = null;
+    }
   }, []);
 
-  useEffect(() => {
-    if (isAtBottomRef.current) {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  const disengageAutoScroll = useCallback(() => {
+    isAtBottomRef.current = false;
+    cancelPendingScroll();
+    setShowJumpToBottom(true);
+  }, [cancelPendingScroll]);
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      if (e.deltaY < 0) {
+        disengageAutoScroll();
+      }
+    },
+    [disengageAutoScroll],
+  );
+
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length > 0) {
+      touchStartYRef.current = e.touches[0].clientY;
     }
+  }, []);
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (touchStartYRef.current === null || e.touches.length === 0) return;
+      const deltaY = e.touches[0].clientY - touchStartYRef.current;
+      // Finger dragging downward means scrolling upward toward older messages
+      if (deltaY > 6) {
+        disengageAutoScroll();
+      }
+    },
+    [disengageAutoScroll],
+  );
+
+  const handleScrollKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === 'PageUp' || e.key === 'ArrowUp' || e.key === 'Home') {
+        disengageAutoScroll();
+      }
+    },
+    [disengageAutoScroll],
+  );
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // Tight 24px threshold to re-engage auto-scroll when the user reaches the bottom
+    if (distanceFromBottom <= 24) {
+      isAtBottomRef.current = true;
+      setShowJumpToBottom(false);
+    } else if (!isAtBottomRef.current) {
+      setShowJumpToBottom(true);
+    }
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    isAtBottomRef.current = true;
+    setShowJumpToBottom(false);
+    cancelPendingScroll();
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }
+  }, [cancelPendingScroll]);
+
+  useEffect(() => {
+    if (!isAtBottomRef.current) return;
+    if (rafScrollRef.current !== null) return;
+    rafScrollRef.current = requestAnimationFrame(() => {
+      rafScrollRef.current = null;
+      if (isAtBottomRef.current && scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
   }, [messages, status]);
+
+  useEffect(() => {
+    return () => {
+      if (rafScrollRef.current !== null) {
+        cancelAnimationFrame(rafScrollRef.current);
+      }
+    };
+  }, []);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
@@ -320,6 +470,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
 
     // Force scroll to bottom on user input
     isAtBottomRef.current = true;
+    setShowJumpToBottom(false);
 
     // Send the message
     sendMessage({ text: text || '(see attached files)' });
@@ -528,39 +679,62 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
   return (
     <div className="flex h-full flex-col">
       {fileInput}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
-          {messages.map((m, i) => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              isThinking={busy && i === messages.length - 1 && m.role === 'assistant'}
-              attachments={messageAttachments[m.id]}
-              isProjectThread={!!activeProjectId}
-            />
-          ))}
-          {status === 'submitted' && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="inline-flex gap-1">
-                <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:0ms]" />
-                <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:150ms]" />
-                <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:300ms]" />
-              </span>
-              <span>Thinking…</span>
-            </div>
-          )}
-          {error && (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              <p className="font-medium mb-1">Failed to get a response</p>
-              <p className="text-xs text-destructive/80 leading-relaxed">
-                {error.message || 'The model did not return a response. This can happen if the model is too slow, ran out of memory, or is not running.'}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                Try sending your message again, or switch to a smaller/faster model.
-              </p>
-            </div>
-          )}
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          onWheel={handleWheel}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onKeyDown={handleScrollKeyDown}
+          tabIndex={-1}
+          className="h-full overflow-y-auto"
+        >
+          <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
+            {messages.map((m, i) => (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                isThinking={busy && i === messages.length - 1 && m.role === 'assistant'}
+                attachments={messageAttachments[m.id]}
+                isProjectThread={!!activeProjectId}
+              />
+            ))}
+            {status === 'submitted' && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span className="inline-flex gap-1">
+                  <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:0ms]" />
+                  <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:150ms]" />
+                  <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:300ms]" />
+                </span>
+                <span>Thinking…</span>
+              </div>
+            )}
+            {error && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                <p className="font-medium mb-1">Failed to get a response</p>
+                <p className="text-xs text-destructive/80 leading-relaxed">
+                  {error.message || 'The model did not return a response. This can happen if the model is too slow, ran out of memory, or is not running.'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Try sending your message again, or switch to a smaller/faster model.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
+
+        {showJumpToBottom && (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            aria-label="Jump to latest message"
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 rounded-full border border-neutral-200 dark:border-neutral-700 bg-white/95 dark:bg-neutral-900/95 px-3.5 py-1.5 text-xs font-medium text-[#111827] dark:text-neutral-100 shadow-md backdrop-blur-xs hover:bg-neutral-50 dark:hover:bg-neutral-800 active:scale-95 transition-all cursor-pointer"
+          >
+            <ArrowDown className="size-3.5" />
+            <span>Jump to latest</span>
+          </button>
+        )}
       </div>
 
       <form className={cn("shrink-0 px-4 py-3", !activeProjectId && "bg-background")} onSubmit={onSubmit}>
@@ -580,7 +754,7 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
 
 type MessageType = ReturnType<typeof useChat>['messages'][number];
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   message,
   isThinking,
   attachments,
@@ -650,7 +824,7 @@ function MessageBubble({
       </div>
     </div>
   );
-}
+});
 
 function ChipIcon({ animate, className }: { animate?: boolean; className?: string }) {
   return (

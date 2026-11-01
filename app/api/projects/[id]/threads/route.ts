@@ -14,6 +14,7 @@ import { conversations } from '@/lib/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { generateId } from 'ai';
 import { z } from 'zod';
+import { deriveInitialTitle } from '@/lib/chat/title';
 
 // ── GET: List Threads ───────────────────────────────────────────────────────
 /* 
@@ -63,7 +64,7 @@ export async function POST(
   const model = parsed.data.model || 'qwen2.5:latest';
   const threadId = generateId();
   const now = new Date();
-  const title = parsed.data.title || 'New Thread';
+  const title = parsed.data.title ? deriveInitialTitle(parsed.data.title, 'New Thread') : 'New Thread';
 
   // Create conversation record
   await db.insert(conversations).values({

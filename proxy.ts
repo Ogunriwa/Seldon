@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 /**
- * Root Security Middleware: Localhost CSRF & Origin Guard
+ * Root Security Proxy (Next.js 16 convention): Localhost CSRF & Origin Guard
  *
  * Protects Seldon's local API endpoints from being triggered or abused by
  * external web pages visited by the user in the same browser.
@@ -12,7 +12,7 @@ import type { NextRequest } from 'next/server';
  * 2. Origin validation: On state-modifying requests (POST, PATCH, DELETE, PUT),
  *    ensure Origin matches localhost or 127.0.0.1.
  */
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Only apply protection to API route handlers

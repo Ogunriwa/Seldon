@@ -178,14 +178,14 @@ export function MemoriesTab({
   const limitDisplay = `${Math.round(tokenLimit / 1000)}K`;
 
   return (
-    <div className="flex flex-col items-start relative size-full">
+    <div className="bg-white dark:bg-neutral-900 rounded-[17px] flex flex-col items-start relative size-full">
       {/* Header */}
-      <div className="bg-white dark:bg-neutral-900 flex items-center justify-between pb-[20px] pt-[40px] px-[24px] w-full shrink-0">
+      <div className="bg-white dark:bg-neutral-900 flex items-center justify-between pb-[20px] pt-[40px] px-[24px] w-full shrink-0 rounded-t-[17px]">
         <div className="flex flex-col gap-[6px] items-start shrink-0">
           <p className="font-['Inter'] font-bold text-[#111827] dark:text-white text-[20px] m-0">
             Project Memories
           </p>
-          <p className="font-['Inter'] font-normal text-[#4b5563] dark:text-neutral-400 text-[14px] m-0">
+          <p className="hidden xl:block font-['Inter'] font-normal text-[#4b5563] dark:text-neutral-400 text-[14px] m-0">
             Pin core facts and decisions that agents should remember across all threads.
           </p>
           {limitError && (
@@ -206,7 +206,7 @@ export function MemoriesTab({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex flex-col gap-[12px] items-start pb-[40px] pt-[12px] px-[24px] w-full shrink-0 flex-1">
+      <div className="flex flex-col gap-[16px] xl:gap-[12px] items-start pb-[40px] pt-[12px] px-[24px] w-full shrink-0 flex-1">
         
         {/* Creation Card */}
         {isCreating && (
@@ -347,7 +347,7 @@ export function MemoriesTab({
             })}
 
             {/* Token Count */}
-            {memories.length > 0 && (
+            {(memories.length > 0 || isCreating) && (
               <div className="flex items-center justify-end p-[10px] shrink-0 w-full mt-auto">
                 <p className={`font-['Inter'] font-medium text-[14px] whitespace-nowrap transition-colors ${isOverLimit ? 'text-red-500' : 'text-[#9ca3af] dark:text-neutral-500'}`}>
                   Token Count: {tokenDisplay} / {limitDisplay}

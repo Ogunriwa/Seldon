@@ -28,7 +28,7 @@ export async function GET(
   if (att.filePath) {
     const absPath = path.isAbsolute(att.filePath)
       ? att.filePath
-      : path.join(process.cwd(), att.filePath);
+      : path.join(/*turbopackIgnore: true*/ process.cwd(), att.filePath);
 
     try {
       const buffer = await fs.promises.readFile(absPath);

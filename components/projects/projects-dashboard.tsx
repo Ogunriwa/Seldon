@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { StartProjectModal } from './start-project-modal';
 import { useTabs } from '@/lib/tabs-context';
+import { useSidebar } from '@/lib/sidebar-context';
 import { ProjectCard } from './project-card';
 
 export type ProjectItem = {
@@ -210,6 +211,7 @@ export function ProjectsDashboard({
   const [isAllProjectsOpen, setIsAllProjectsOpen] = useState(false);
   const router = useRouter();
   const { openTab } = useTabs();
+  const { isOpen, isHoverMode } = useSidebar();
 
   // ── Handlers ──────────────────────────────────────────
   
@@ -228,15 +230,24 @@ export function ProjectsDashboard({
     setProjects((prev) => [newProject, ...prev]);
   };
 
-  const recentProjects = projects.slice(0, 10);
+  // At tablet (< 1280px): 3x3 (9 cards) when SideNav is open (859:2514), 4x3 (12 cards) when closed (870:2640).
+  // At desktop (>= 1280px): 5x2 (10 cards).
+  const maxRecentCount = isHoverMode ? (isOpen ? 9 : 12) : 10;
+  const recentProjects = projects.slice(0, maxRecentCount);
 
   return (
-    <div className="bg-[rgba(255,255,255,0.1)] flex h-full w-full flex-col items-start overflow-y-auto px-6 py-4 md:px-[80px] md:py-[10px]">
-      {/* Combined Top Frame (Figma Node 652:858 / 652:1196) */}
-      <div className={`flex flex-col ${projects.length === 0 ? 'gap-[20px]' : 'gap-[59px]'} items-start w-full pt-[40px] pb-[10px] px-[10px] shrink-0`}>
-        {/* Top Header Frame (Figma Node 652:859 / 652:1197) */}
+    <div className="bg-[rgba(255,255,255,0.1)] flex h-full w-full flex-col items-start overflow-y-auto p-[10px] xl:px-[80px] xl:py-[10px]">
+      {/* Combined Top Frame (Figma Node 652:858 / 652:1196 / 859:2589 / 870:2715) */}
+      <div
+        className={`flex flex-col ${
+          projects.length === 0 ? 'gap-[20px]' : 'gap-[59px]'
+        } items-start w-full ${
+          isOpen ? 'pt-[40px]' : 'pt-[8px] xl:pt-[40px]'
+        } pb-[10px] px-[10px] shrink-0`}
+      >
+        {/* Top Header Frame (Figma Node 652:859 / 652:1197 / 859:2590 / 870:2716) */}
         <div className="flex items-center justify-between p-[10px] w-full shrink-0">
-          <div className="flex flex-1 items-center gap-[20px]">
+          <div className="flex flex-1 items-center gap-[20px] min-w-0">
             <h1 className="text-[32px] font-medium leading-normal text-black dark:text-neutral-100 select-none">
               Projects
             </h1>
@@ -266,7 +277,7 @@ export function ProjectsDashboard({
             </div>
           </div>
         ) : (
-          /* Recents Frame (Figma Node 652:879) */
+          /* Recents Frame (Figma Node 652:879 / 859:2610 / 870:2736) */
           <div className="flex flex-col gap-[20px] items-start px-[10px] py-[20px] w-full shrink-0">
             <div
               onClick={() => setIsRecentsOpen(!isRecentsOpen)}
@@ -279,7 +290,7 @@ export function ProjectsDashboard({
             </div>
 
             {isRecentsOpen && (
-              <div className="flex flex-wrap gap-[80px] items-start pr-[20px] py-[10px] w-full">
+              <div className="flex flex-wrap gap-x-[20px] gap-y-[40px] xl:gap-[80px] items-start xl:pr-[20px] py-[10px] w-full">
                 {recentProjects.map((project) => (
                   <ProjectCard
                     key={project.id}
@@ -293,7 +304,7 @@ export function ProjectsDashboard({
         )}
       </div>
 
-      {/* All Projects Frame (Figma Node 652:936) - Only rendered when projects exist (Figma 652:857 vs 652:1195) */}
+      {/* All Projects Frame (Figma Node 652:936 / 859:2667 / 870:2789) - Only rendered when projects exist */}
       {projects.length > 0 && (
         <div className="w-full flex items-start pl-[10px] pr-[20px] pt-[10px]">
           <div className="flex flex-1 flex-col gap-[20px] items-start px-[10px] w-full">
@@ -308,7 +319,7 @@ export function ProjectsDashboard({
             </div>
 
             {isAllProjectsOpen && (
-              <div className="flex flex-wrap gap-[80px] items-start pr-[20px] py-[10px] w-full">
+              <div className="flex flex-wrap gap-x-[20px] gap-y-[40px] xl:gap-[80px] items-start xl:pr-[20px] py-[10px] w-full">
                 {projects.map((project) => (
                   <ProjectCard
                     key={`all-${project.id}`}

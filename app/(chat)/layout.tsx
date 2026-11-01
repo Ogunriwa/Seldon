@@ -27,9 +27,11 @@ export default function ChatLayout({
           {/* Main Workspace Area */}
           <div className="relative flex flex-1 w-full overflow-hidden">
             <SideNav />
-            <SidebarTrigger />
-            <main className="relative flex-1 h-full overflow-y-auto">
-              {children}
+            <main className="relative flex flex-1 flex-col h-full min-w-0 overflow-y-auto">
+              <SidebarTrigger />
+              <div className="relative flex flex-1 flex-col min-h-0 w-full">
+                {children}
+              </div>
             </main>
           </div>
         </div>

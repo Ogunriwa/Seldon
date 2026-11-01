@@ -1,9 +1,18 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, PanelLeft, Pencil, Trash2 } from 'lucide-react';
+import { useSidebar } from '@/lib/sidebar-context';
+import { useTabs } from '@/lib/tabs-context';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { ProjectBinderIcon } from './projects-dashboard';
 import { ThreadsTab, ThreadItem } from './tabs/threads-tab';
 import { InstructionsTab } from './tabs/instructions-tab';
@@ -42,61 +51,257 @@ export function ProjectWorkspace({
   project: ProjectFullData;
 }) {
   const [activeTab, setActiveTab] = useState<TabType>('threads');
+  const [projectName, setProjectName] = useState(project.name);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [draftName, setDraftName] = useState(project.name);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const menuContainerRef = useRef<HTMLDivElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const isEditingNameRef = useRef(false);
+  isEditingNameRef.current = isEditingName;
+
   const router = useRouter();
+  const { isOpen, toggleSidebar, handleHoverEnter, handleHoverLeave } = useSidebar();
+  const { renameTab, closeTab } = useTabs();
+  const tabHref = `/projects/${project.id}`;
+
+  // Sync project title into the global workspace tab bar
+  useEffect(() => {
+    renameTab(tabHref, projectName);
+  }, [tabHref, projectName, renameTab]);
+
+  // Close dropdown menu when clicking outside or pressing Escape
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (menuContainerRef.current && !menuContainerRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isMenuOpen]);
+
+  // Auto-focus and select all text when entering inline rename mode
+  useEffect(() => {
+    if (isEditingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+    }
+  }, [isEditingName]);
+
+  const startRename = useCallback(() => {
+    setIsMenuOpen(false);
+    setDraftName(projectName);
+    setIsEditingName(true);
+  }, [projectName]);
+
+  const cancelRename = useCallback(() => {
+    setIsEditingName(false);
+    setDraftName(projectName);
+  }, [projectName]);
+
+  const commitRename = useCallback(async () => {
+    if (!isEditingNameRef.current) return;
+    setIsEditingName(false);
+
+    const trimmed = draftName.trim();
+    if (!trimmed || trimmed === projectName) {
+      setDraftName(projectName);
+      return;
+    }
+
+    const previousName = projectName;
+    setProjectName(trimmed);
+    setDraftName(trimmed);
+    renameTab(tabHref, trimmed);
+
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    } catch (err) {
+      console.error('Failed to rename project:', err);
+      setProjectName(previousName);
+      setDraftName(previousName);
+      renameTab(tabHref, previousName);
+    }
+  }, [draftName, project.id, projectName, renameTab, tabHref]);
+
+  const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitRename();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelRename();
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      setIsDeleteConfirmOpen(false);
+      window.dispatchEvent(new CustomEvent('conversations-changed'));
+      closeTab(tabHref);
+      router.push('/projects');
+    } catch (err) {
+      console.error('Failed to delete project:', err);
+      setIsDeleting(false);
+    }
+  };
 
   return (
-    <div className="flex h-full w-full flex-col items-start" data-node-id="687:1529">
-      {/* 1. Breadcrumbs Routing Header (Figma Node 687:1530 / 658:5956) */}
+    <div className="flex h-full w-full flex-col gap-[10px] xl:gap-0 items-start" data-node-id="687:1529">
+      {/* 1. Breadcrumbs Routing Header + Inline Sidebar Trigger when Closed (Figma Nodes 859:3640 / 658:5956) */}
       <div
-        className="flex shrink-0 items-center justify-between px-[20px] pt-[20px] select-none"
-        data-node-id="658:5956"
+        className={`flex w-full shrink-0 ${
+          !isOpen ? 'items-end gap-[10px] px-[12px]' : 'items-center'
+        }`}
+        data-node-id="859:3640"
       >
-        <div className="flex items-center gap-1.5 text-[12px] font-light leading-normal">
-          <Link
-            href="/projects"
-            className="text-neutral-500 hover:text-black dark:text-neutral-400 dark:hover:text-white transition-colors"
+        {!isOpen && (
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            onMouseEnter={handleHoverEnter}
+            onMouseLeave={handleHoverLeave}
+            title="Show Sidebar"
+            aria-label="Show Sidebar"
+            className="flex size-[15px] shrink-0 items-center justify-center text-[#5f5e5b] transition-colors hover:text-black cursor-pointer"
           >
-            Projects
-          </Link>
-          <span className="text-neutral-400 dark:text-neutral-600">/</span>
-          <span className="text-black dark:text-neutral-100 font-normal">
-            {project.name}
-          </span>
+            <PanelLeft className="size-[15px] stroke-[1.75]" />
+          </button>
+        )}
+        <div
+          className="flex shrink-0 items-center justify-between px-[20px] pt-[20px] select-none"
+          data-node-id="658:5956"
+        >
+          <div className="flex items-center gap-1.5 text-[12px] font-light leading-normal">
+            <Link
+              href="/projects"
+              className="text-neutral-500 hover:text-black dark:text-neutral-400 dark:hover:text-white transition-colors"
+            >
+              Projects
+            </Link>
+            <span className="text-neutral-400 dark:text-neutral-600">/</span>
+            <span className="text-black dark:text-neutral-100 font-normal">
+              {projectName}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* 2. Main Body Container (Figma Node 687:1531) */}
-      <div className="bg-[rgba(255,255,255,0.1)] flex flex-1 flex-col items-start px-6 md:px-[80px] py-[20px] w-full h-full min-h-0">
+      {/* 2. Main Body Container (Figma Nodes 687:1531 / 859:3446 / 859:3579) */}
+      <div className="bg-[rgba(255,255,255,0.1)] flex flex-1 flex-col items-start p-[20px] xl:px-[80px] xl:py-[20px] w-full h-full min-h-0">
         {/* Project Header Subframe (Figma Node 687:1532 / 687:1533) */}
         <div className="flex flex-col items-center justify-center pb-[10px] px-[10px] w-full shrink-0">
           {/* Title Row: Title + 3-Binder Icon on left, MoreHorizontal on right */}
           <div className="flex items-center justify-between p-[10px] w-full shrink-0">
             <div className="flex items-center gap-[20px] h-[69px] shrink-0 select-none">
-              <h1 className="text-[32px] font-medium leading-normal text-black dark:text-neutral-100 whitespace-nowrap">
-                {project.name}
-              </h1>
+              {isEditingName ? (
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  onKeyDown={handleNameKeyDown}
+                  onBlur={commitRename}
+                  maxLength={100}
+                  aria-label="Rename project title"
+                  className="w-[260px] sm:w-[360px] max-w-full rounded-[8px] border border-[#2563EB] bg-white dark:bg-neutral-900 px-[8px] py-[2px] text-[32px] font-medium leading-normal text-black dark:text-neutral-100 outline-none ring-2 ring-[#2563EB]/20"
+                />
+              ) : (
+                <h1 className="text-[32px] font-medium leading-normal text-black dark:text-neutral-100 whitespace-nowrap">
+                  {projectName}
+                </h1>
+              )}
               <ProjectBinderIcon />
             </div>
 
-            <div className="flex items-center justify-end pb-[24px] pt-[10px] shrink-0">
+            <div
+              ref={menuContainerRef}
+              className="relative flex items-center justify-end pb-[24px] pt-[10px] shrink-0"
+            >
               <button
                 type="button"
-                className="p-1 rounded-md text-neutral-400 hover:text-black dark:hover:text-white transition-colors"
+                onClick={() => setIsMenuOpen((prev) => !prev)}
+                aria-label="Project options"
+                aria-haspopup="menu"
+                aria-expanded={isMenuOpen}
+                className="p-1 rounded-md text-neutral-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
                 title="Project options"
               >
                 <MoreHorizontal className="size-[24px]" />
               </button>
+
+              {/* Project Options Dropdown Menu */}
+              {isMenuOpen && !isEditingName && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full mt-[-18px] z-50 w-[180px] rounded-[12px] border border-[rgba(0,0,0,0.08)] dark:border-neutral-800 bg-white dark:bg-neutral-900 p-[4px] shadow-[0px_8px_24px_rgba(0,0,0,0.12)]"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={startRename}
+                    className="flex w-full items-center gap-[10px] rounded-[8px] px-[10px] py-[8px] text-left text-[13px] font-medium text-[#111827] dark:text-neutral-100 hover:bg-[#F3F4F6] dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                  >
+                    <Pencil className="size-[14px] text-neutral-500" />
+                    <span>Rename</span>
+                  </button>
+
+                  <div className="my-[4px] h-[1px] w-full bg-[rgba(0,0,0,0.06)] dark:bg-neutral-800" />
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsDeleteConfirmOpen(true);
+                    }}
+                    className="flex w-full items-center gap-[10px] rounded-[8px] px-[10px] py-[8px] text-left text-[13px] font-medium text-[#DC2626] hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="size-[14px] text-[#DC2626]" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Description Row (Figma Node 687:1555 / 687:1556) */}
           <div className="flex items-start px-[10px] w-full shrink-0">
             {project.description ? (
-              <p className="max-w-[896px] text-[14px] font-normal leading-[1.6] tracking-[0.2px] text-black dark:text-neutral-300">
+              <p className="max-w-[896px] text-[14px] font-normal leading-[1.6] tracking-[0.2px] text-black dark:text-neutral-300 line-clamp-2 xl:line-clamp-none">
                 {project.description}
               </p>
             ) : project.instructions ? (
-              <p className="max-w-[896px] text-[14px] font-normal leading-[1.6] tracking-[0.2px] text-black dark:text-neutral-300">
+              <p className="max-w-[896px] text-[14px] font-normal leading-[1.6] tracking-[0.2px] text-black dark:text-neutral-300 line-clamp-2 xl:line-clamp-none">
                 {project.instructions}
               </p>
             ) : (
@@ -135,11 +340,11 @@ export function ProjectWorkspace({
           </div>
 
           {/* Active Tab Viewport */}
-          <div className="w-full flex-1 flex flex-col min-h-0 mt-[10px]">
+          <div className="w-full flex-1 flex flex-col min-h-0">
             {activeTab === 'threads' ? (
               <ThreadsTab
                 projectId={project.id}
-                projectName={project.name}
+                projectName={projectName}
                 initialThreads={project.threads || []}
               />
             ) : activeTab === 'instructions' ? (
@@ -170,6 +375,42 @@ export function ProjectWorkspace({
           </div>
         </div>
       </div>
+
+      {/* Delete Project Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="max-w-sm rounded-2xl p-6 sm:p-7">
+          <DialogHeader className="flex flex-col gap-1.5 text-left">
+            <DialogTitle className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+              Delete project?
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed text-neutral-500">
+              This will permanently delete{' '}
+              <span className="font-medium text-neutral-700 dark:text-neutral-300">
+                &ldquo;{projectName}&rdquo;
+              </span>{' '}
+              along with all of its threads, library files, and memories. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={() => setIsDeleteConfirmOpen(false)}
+              className="rounded-xl border border-neutral-200 dark:border-neutral-800 px-4 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={handleConfirmDelete}
+              className="rounded-xl bg-[#DC2626] px-4 py-2 text-xs font-medium text-white hover:bg-red-700 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {isDeleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

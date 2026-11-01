@@ -11,7 +11,7 @@
  */
 import { db } from '@/lib/db/client';
 import { conversations, messages, attachments } from '@/lib/db/schema';
-import { eq, asc } from 'drizzle-orm';
+import { eq, asc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 // ── GET: Retrieve conversation + its message history ─────────────────────
@@ -35,7 +35,7 @@ export async function GET(
     .select()
     .from(messages)
     .where(eq(messages.conversationId, id))
-    .orderBy(asc(messages.createdAt));
+    .orderBy(asc(messages.createdAt), asc(sql`rowid`));
 
   return Response.json({ conversation, messages: msgs });
 }
@@ -45,7 +45,7 @@ import fs from 'fs';
 
 // ── PATCH: Rename a conversation ─────────────────────────────────────────
 const patchSchema = z.object({
-  title: z.string().min(1).max(200),
+  title: z.string().trim().min(1).max(200),
 });
 
 export async function PATCH(
@@ -66,16 +66,17 @@ export async function PATCH(
     return Response.json({ error: parsed.error.message }, { status: 400 });
   }
 
+  // Do not bump updatedAt on rename so the chat stays in its chronological position
   const result = await db
     .update(conversations)
-    .set({ title: parsed.data.title, updatedAt: new Date() })
+    .set({ title: parsed.data.title })
     .where(eq(conversations.id, id));
 
   if (result.changes === 0) {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, title: parsed.data.title });
 }
 
 // ── DELETE: Remove a conversation and its messages ───────────────────────
@@ -107,7 +108,7 @@ export async function DELETE(
     if (filePath) {
       const absPath = path.isAbsolute(filePath)
         ? filePath
-        : path.join(process.cwd(), filePath);
+        : path.join(/*turbopackIgnore: true*/ process.cwd(), filePath);
       fs.promises.unlink(absPath).catch(() => {});
     }
   }

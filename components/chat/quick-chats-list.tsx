@@ -24,7 +24,7 @@ export function QuickChatsList({
   // `useTabs` integrates this with the global layout's tab bar.
   const [chats, setChats] = useState<QuickChatItem[]>(initialChats);
   const router = useRouter();
-  const { openTab } = useTabs();
+  const { openTab, closeTab } = useTabs();
 
   // ── Event Handlers ─────────────────────────────────────────────────
   const handleOpenChat = (chat: QuickChatItem) => {
@@ -38,15 +38,21 @@ export function QuickChatsList({
 
   const handleDelete = async (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation();
+    const previous = chats;
     setChats((prev) => prev.filter((c) => c.id !== chatId));
     try {
-      await fetch(`/api/conversations/${chatId}`, {
+      const res = await fetch(`/api/conversations/${chatId}`, {
         method: 'DELETE',
       });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      closeTab(`/c/${chatId}`);
       // Tell the SideNav Quick Chats accordion to re-fetch
       window.dispatchEvent(new CustomEvent('conversations-changed'));
     } catch (err) {
       console.error('Failed to delete chat:', err);
+      setChats(previous);
     }
   };
 

@@ -23,12 +23,12 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
       <div className="flex h-[100px] w-full flex-col gap-[6.8px] items-start rounded-[18px] bg-white dark:bg-neutral-900 p-[10px]">
         {/* Header Row (Figma Node 652:887) */}
         <div className="w-full pb-[2.3px]">
-          <h3 className="truncate text-[10.9px] font-bold tracking-[-0.22px] text-[#111827] dark:text-neutral-100 leading-[1.1]">
+          <h3 className="truncate text-[10.9px] font-bold tracking-[-0.22px] text-[#111827] dark:text-neutral-100 leading-[1.25]">
             {project.name}
           </h3>
         </div>
-        {/* Body Description (Figma Node 652:889) */}
-        <p className="line-clamp-4 text-[7.5px] font-normal leading-[1.4] text-[#6b7280] dark:text-neutral-400">
+        {/* Body Description (Figma Node 652:889 / 859:2620 / 870:2746) */}
+        <p className="line-clamp-4 text-[6.35px] font-normal leading-[1.5] text-[#6b7280] dark:text-neutral-400">
           {project.description ||
             project.instructions ||
             'Persistent workspace where files, instructions, and chats share one lasting memory.'}

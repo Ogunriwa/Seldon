@@ -17,6 +17,7 @@ import { conversations } from '@/lib/db/schema';
 import { desc, eq, isNull } from 'drizzle-orm';
 import { generateId } from 'ai';
 import { z } from 'zod';
+import { deriveInitialTitle } from '@/lib/chat/title';
 
 // ── GET: List conversations with optional filtering ──────────────────────
 export async function GET(req: Request) {
@@ -70,9 +71,9 @@ export async function POST(req: Request) {
 
   const { model, firstMessage, projectId } = parsed.data;
 
-  /* Derive a short title from the user's first message for sidebar display.
-   * Strips leading markdown/special characters and caps at 40 chars. */
-  const title = firstMessage.replace(/^[#?/\s]+/, '').trim().slice(0, 40) || 'New chat';
+  /* Derive a clean initial title from the user's first message for immediate display
+   * before the background LLM title generator refines it after the first turn. */
+  const title = deriveInitialTitle(firstMessage, 'New chat');
   const now = new Date();
   const id = generateId();
 
