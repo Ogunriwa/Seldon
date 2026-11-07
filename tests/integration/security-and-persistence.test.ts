@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { proxy } from '@/proxy';
+import { GET as getAttachment } from '@/app/api/attachments/[id]/route';
 import { db } from '@/lib/db/client';
 import { projects, libraries, conversations, messages as messagesTable, attachments } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
@@ -8,7 +9,7 @@ import { generateId } from 'ai';
 import { persistUserTurn, persistMessages } from '@/lib/chat/persist';
 import { buildChatContext } from '@/lib/chat/context';
 
-describe('CSRF & Cross-Origin Proxy Guard (proxy.ts)', () => {
+describe('CSRF, Origin & DNS Rebinding Proxy Guard (proxy.ts)', () => {
   it('blocks state-changing POST requests with Sec-Fetch-Site: cross-site with 403', () => {
     const req = new NextRequest('http://localhost:3000/api/chat', {
       method: 'POST',
@@ -21,7 +22,7 @@ describe('CSRF & Cross-Origin Proxy Guard (proxy.ts)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('blocks state-changing POST requests from a mismatched Origin header with 403', () => {
+  it('blocks state-changing POST requests from a mismatched Origin header or Origin: null with 403', () => {
     const req = new NextRequest('http://localhost:3000/api/projects', {
       method: 'POST',
       headers: {
@@ -29,12 +30,31 @@ describe('CSRF & Cross-Origin Proxy Guard (proxy.ts)', () => {
         host: 'localhost:3000',
       },
     });
+    expect(proxy(req).status).toBe(403);
 
-    const res = proxy(req);
-    expect(res.status).toBe(403);
+    const nullOriginReq = new NextRequest('http://localhost:3000/api/projects', {
+      method: 'POST',
+      headers: {
+        origin: 'null',
+        host: 'localhost:3000',
+      },
+    });
+    expect(proxy(nullOriginReq).status).toBe(403);
   });
 
-  it('allows same-origin POST requests and read-only GET requests', () => {
+  it('blocks DNS rebinding attacks (untrusted Host header) even on read-only GET requests with 403', () => {
+    const rebindGet = new NextRequest('http://localhost:3000/api/conversations', {
+      method: 'GET',
+      headers: {
+        host: 'evil.rebind.network:3000',
+        'sec-fetch-site': 'same-origin',
+      },
+    });
+
+    expect(proxy(rebindGet).status).toBe(403);
+  });
+
+  it('allows same-origin POST requests and read-only GET requests on localhost / 127.0.0.1', () => {
     const sameOriginPost = new NextRequest('http://localhost:3000/api/chat', {
       method: 'POST',
       headers: {
@@ -45,10 +65,49 @@ describe('CSRF & Cross-Origin Proxy Guard (proxy.ts)', () => {
     });
     expect(proxy(sameOriginPost).status).toBe(200);
 
-    const getReq = new NextRequest('http://localhost:3000/api/models', {
+    const getReq = new NextRequest('http://127.0.0.1:3000/api/models', {
       method: 'GET',
+      headers: {
+        host: '127.0.0.1:3000',
+      },
     });
     expect(proxy(getReq).status).toBe(200);
+  });
+});
+
+describe('Attachment Path Containment Guard (/api/attachments/[id])', () => {
+  it('blocks path traversal attempts outside data/uploads with 403', async () => {
+    const convId = `test-conv-${generateId()}`;
+    const attId = `test-att-${generateId()}`;
+    const now = new Date();
+
+    try {
+      await db.insert(conversations).values({
+        id: convId,
+        title: 'Attachment Path Guard Test',
+        model: 'gemma4:e4b',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await db.insert(attachments).values({
+        id: attId,
+        conversationId: convId,
+        messageId: null,
+        filename: 'escape.png',
+        mediaType: 'image/png',
+        sizeBytes: 100,
+        filePath: 'data/uploads/../../package.json',
+        createdAt: now,
+      });
+
+      const res = await getAttachment(new Request(`http://localhost:3000/api/attachments/${attId}`), {
+        params: Promise.resolve({ id: attId }),
+      });
+      expect(res.status).toBe(403);
+    } finally {
+      await db.delete(conversations).where(eq(conversations.id, convId));
+    }
   });
 });
 

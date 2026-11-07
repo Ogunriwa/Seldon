@@ -1,14 +1,22 @@
 import { db } from '@/lib/db/client';
 import { attachments } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
+
+const attachmentIdSchema = z.string().trim().min(1).max(128);
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
+  const rawParams = await params;
+  const parsedId = attachmentIdSchema.safeParse(rawParams.id);
+  if (!parsedId.success) {
+    return new Response('Invalid attachment ID', { status: 400 });
+  }
+  const id = parsedId.data;
 
   const att = await db
     .select({
@@ -24,11 +32,16 @@ export async function GET(
     return new Response('Attachment not found', { status: 404 });
   }
 
-  // 1. Preferred Option A: Stream directly from local disk
+  // 1. Preferred Option A: Stream directly from local disk with strict path containment
   if (att.filePath) {
+    const uploadsRoot = path.resolve(/*turbopackIgnore: true*/ process.cwd(), 'data', 'uploads');
     const absPath = path.isAbsolute(att.filePath)
-      ? att.filePath
-      : path.join(/*turbopackIgnore: true*/ process.cwd(), att.filePath);
+      ? path.resolve(att.filePath)
+      : path.resolve(/*turbopackIgnore: true*/ process.cwd(), att.filePath);
+
+    if (!absPath.startsWith(uploadsRoot + path.sep)) {
+      return new Response('Forbidden: Attachment path outside uploads directory', { status: 403 });
+    }
 
     try {
       const buffer = await fs.promises.readFile(absPath);

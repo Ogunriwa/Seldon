@@ -11,16 +11,21 @@
  * Delegates to lib/ollama.ts → getModelCapabilities() which queries Ollama's
  * /api/show endpoint and inspects model metadata.
  */
+import { z } from 'zod';
 import { getModelCapabilities } from '@/lib/ollama';
+
+const querySchema = z.object({
+  model: z.string().trim().min(1, 'model is required').max(200),
+});
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const model = searchParams.get('model');
+  const parsed = querySchema.safeParse({ model: searchParams.get('model') ?? '' });
 
-  if (!model) {
+  if (!parsed.success) {
     return Response.json({ error: 'model is required' }, { status: 400 });
   }
 
-  const capabilities = await getModelCapabilities(model);
+  const capabilities = await getModelCapabilities(parsed.data.model);
   return Response.json(capabilities);
 }
