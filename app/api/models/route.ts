@@ -35,9 +35,15 @@ export async function GET() {
     const models = (data.models ?? []).map((m) => m.name).sort();
     return Response.json({ models });
   } catch (error: any) {
-    console.error('Failed to fetch Ollama models:', error);
+    const message =
+      !error?.message ||
+      error.message === 'fetch failed' ||
+      error?.cause?.code === 'ECONNREFUSED'
+        ? 'Cannot connect to Ollama on 127.0.0.1:11434 — is Ollama running?'
+        : error.message;
+    console.warn(`[seldon:models] ${message}`);
     return Response.json(
-      { models: [], error: error.message || 'Ollama is offline or unreachable' },
+      { models: [], error: message },
       { status: 503 },
     );
   }

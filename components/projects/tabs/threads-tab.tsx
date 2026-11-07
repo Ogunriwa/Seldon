@@ -49,7 +49,9 @@ export function ThreadsTab({
   const [threads, setThreads] = useState<ThreadItem[]>(initialThreads);
   const [message, setMessage] = useState('');
   const [models, setModels] = useState<string[]>([]);
-  const [selectedModel, setSelectedModel] = useState('qwen2.5:latest');
+  const [selectedModel, setSelectedModel] = useState('');
+  const [loadingModels, setLoadingModels] = useState(true);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
@@ -73,17 +75,45 @@ export function ThreadsTab({
   });
 
   // ── Effects ──────────────────────────────────────────
-  useEffect(() => {
+  const fetchModels = useCallback(() => {
+    setLoadingModels(true);
+    setModelsError(null);
     fetch('/api/models')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.models && data.models.length > 0) {
-          setModels(data.models);
-          setSelectedModel(data.models[0]);
+      .then(async (r) => {
+        const data = (await r.json().catch(() => ({}))) as {
+          models?: string[];
+          error?: string;
+        };
+        if (!r.ok) {
+          setModels([]);
+          setSelectedModel('');
+          setModelsError(data.error || `Server returned status ${r.status}`);
+          return;
+        }
+        const list = data.models ?? [];
+        setModels(list);
+        if (list.length === 0) {
+          setSelectedModel('');
+          setModelsError('No models found. Please pull a model first.');
+        } else {
+          setSelectedModel((curr) =>
+            curr && list.includes(curr) ? curr : list[0],
+          );
         }
       })
-      .catch((err) => console.error('Error fetching models:', err));
+      .catch(() => {
+        setModels([]);
+        setSelectedModel('');
+        setModelsError('Cannot connect to Ollama on 127.0.0.1:11434 — is Ollama running?');
+      })
+      .finally(() => {
+        setLoadingModels(false);
+      });
   }, []);
+
+  useEffect(() => {
+    fetchModels();
+  }, [fetchModels]);
 
   useEffect(() => {
     if (!selectedModel) {
@@ -151,7 +181,7 @@ export function ThreadsTab({
 
   const handleSendMessageWithPrompt = async (promptText: string) => {
     const trimmed = promptText.trim();
-    if ((!trimmed && stagedFiles.length === 0) || isSending) return;
+    if ((!trimmed && stagedFiles.length === 0) || !selectedModel || isSending) return;
 
     setIsSending(true);
     try {
@@ -295,7 +325,12 @@ export function ThreadsTab({
                     handleSendMessage();
                   }
                 }}
-                placeholder="Write a Message"
+                placeholder={
+                  modelsError
+                    ? 'Cannot send message: check Ollama connection'
+                    : 'Write a Message'
+                }
+                disabled={!selectedModel || loadingModels}
                 rows={1}
                 className="w-full resize-none bg-transparent text-[14px] font-medium text-black dark:text-white placeholder:text-[#8e8e93] outline-none"
               />
@@ -342,11 +377,15 @@ export function ThreadsTab({
 
               {/* Right: Model Selector & Send Button */}
               <div className="flex items-center gap-[10px]">
-                <div className="relative flex items-center gap-[4px] px-[10px] py-[6px] rounded-[100px] hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer">
+                <div
+                  className="relative flex items-center gap-[4px] px-[10px] py-[6px] rounded-[100px] hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                  title={modelsError || undefined}
+                >
                   <select
                     value={selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
-                    className="appearance-none bg-transparent pr-4 text-[12px] font-medium text-black dark:text-white outline-none cursor-pointer"
+                    disabled={loadingModels || models.length === 0}
+                    className="appearance-none bg-transparent pr-4 text-[12px] font-medium text-black dark:text-white outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {models.map((m) => (
                       <option key={m} value={m} className="text-black">
@@ -354,17 +393,26 @@ export function ThreadsTab({
                       </option>
                     ))}
                     {models.length === 0 && (
-                      <option value={selectedModel} className="text-black">
-                        Qwen 3.8 28B
+                      <option value="" className="text-black">
+                        {loadingModels ? 'Loading...' : 'No models'}
                       </option>
                     )}
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-1 size-[10px] text-neutral-500" />
                 </div>
+                {(modelsError || models.length === 0) && !loadingModels && (
+                  <button
+                    type="button"
+                    onClick={fetchModels}
+                    className="text-[11px] font-medium text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                )}
 
                 <button
                   type="submit"
-                  disabled={(!message.trim() && stagedFiles.length === 0) || isSending}
+                  disabled={(!message.trim() && stagedFiles.length === 0) || !selectedModel || isSending}
                   className="bg-[#0f172a] text-white flex items-center justify-center rounded-[100px] p-[10px] hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Send Message"
                 >

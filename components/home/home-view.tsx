@@ -2,7 +2,7 @@
 
 // ── Imports & React State ──────────────────────────────────────
 // Core React functionality, icons, and contextual hooks for tabs/routing
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, ArrowRight, ArrowUp, ChevronDown } from 'lucide-react';
 import { useTabs } from '@/lib/tabs-context';
@@ -27,7 +27,9 @@ export function HomeView() {
   // Message input, LLM models list, and UI modal states
   const [message, setMessage] = useState('');
   const [models, setModels] = useState<string[]>([]);
-  const [selectedModel, setSelectedModel] = useState('qwen2.5:latest');
+  const [selectedModel, setSelectedModel] = useState('');
+  const [loadingModels, setLoadingModels] = useState(true);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [comingSoonFeature, setComingSoonFeature] = useState<'Agents' | 'Playground' | null>(null);
@@ -39,18 +41,46 @@ export function HomeView() {
   /*
    * On mount, fetch the list of available models to populate the composer dropdown.
    */
-  useEffect(() => {
+  const fetchModels = useCallback(() => {
+    setLoadingModels(true);
+    setModelsError(null);
     // → GET /api/models — handled by app/api/models/route.ts
     fetch('/api/models')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.models && data.models.length > 0) {
-          setModels(data.models);
-          setSelectedModel(data.models[0]);
+      .then(async (r) => {
+        const data = (await r.json().catch(() => ({}))) as {
+          models?: string[];
+          error?: string;
+        };
+        if (!r.ok) {
+          setModels([]);
+          setSelectedModel('');
+          setModelsError(data.error || `Server returned status ${r.status}`);
+          return;
+        }
+        const list = data.models ?? [];
+        setModels(list);
+        if (list.length === 0) {
+          setSelectedModel('');
+          setModelsError('No models found. Please pull a model first.');
+        } else {
+          setSelectedModel((curr) =>
+            curr && list.includes(curr) ? curr : list[0],
+          );
         }
       })
-      .catch((err) => console.error('Error fetching models:', err));
+      .catch(() => {
+        setModels([]);
+        setSelectedModel('');
+        setModelsError('Cannot connect to Ollama on 127.0.0.1:11434 — is Ollama running?');
+      })
+      .finally(() => {
+        setLoadingModels(false);
+      });
   }, []);
+
+  useEffect(() => {
+    fetchModels();
+  }, [fetchModels]);
 
   // ── Interaction Handlers ──────────────────────────────────────
   /*
@@ -60,7 +90,7 @@ export function HomeView() {
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const trimmed = message.trim();
-    if (!trimmed || isSending) return;
+    if (!trimmed || !selectedModel || isSending) return;
 
     setIsSending(true);
     try {
@@ -429,7 +459,12 @@ export function HomeView() {
                 handleSendMessage();
               }
             }}
-            placeholder="Write a Message"
+            placeholder={
+              modelsError
+                ? 'Cannot send message: check Ollama connection'
+                : 'Write a Message'
+            }
+            disabled={!selectedModel || loadingModels}
             rows={2}
             className="w-full resize-none bg-transparent font-medium text-[14px] text-[#111827] dark:text-neutral-100 placeholder:text-[#8e8e93] outline-none leading-normal"
           />
@@ -447,9 +482,12 @@ export function HomeView() {
 
             <div className="flex items-center gap-[10px]">
               {/* Model Dropdown Pill (Figma node 733:3322) */}
-              <div className="relative flex items-center px-[10px] py-[6px] rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer select-none">
+              <div
+                className="relative flex items-center px-[10px] py-[6px] rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer select-none"
+                title={modelsError || undefined}
+              >
                 <span className="font-medium text-[12px] text-black dark:text-white mr-[4px]">
-                  {selectedModel || 'Select Model'}
+                  {loadingModels ? 'Loading...' : selectedModel || 'No models'}
                 </span>
                 <ChevronDown className="w-[10px] h-[10px] text-neutral-600 dark:text-neutral-400 stroke-[2.2]" />
                 
@@ -457,7 +495,8 @@ export function HomeView() {
                 <select
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  disabled={loadingModels || models.length === 0}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
                 >
                   {models.map((m) => (
                     <option key={m} value={m}>
@@ -465,15 +504,26 @@ export function HomeView() {
                     </option>
                   ))}
                   {models.length === 0 && (
-                    <option value={selectedModel}>{selectedModel}</option>
+                    <option value="">
+                      {loadingModels ? 'Loading...' : 'No models'}
+                    </option>
                   )}
                 </select>
               </div>
+              {(modelsError || models.length === 0) && !loadingModels && (
+                <button
+                  type="button"
+                  onClick={fetchModels}
+                  className="text-[11px] font-medium text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                >
+                  Retry
+                </button>
+              )}
 
               {/* Send Button (Figma node 733:3328) */}
               <button
                 type="submit"
-                disabled={!message.trim() || isSending}
+                disabled={!message.trim() || !selectedModel || isSending}
                 className="size-[34px] rounded-full bg-[#0f172a] text-white flex items-center justify-center hover:bg-[#1e293b] active:scale-95 transition-all shadow-xs disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 title="Send Message"
               >

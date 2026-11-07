@@ -444,13 +444,12 @@ pnpm add -D @playwright/test
   5. Assert response contains "BLUE-HERON-42".
 * **Flow 2: Pinned Memory Guard in UI:**
   1. Open Memories tab.
-  2. Paste a 35,000 character string into the draft textarea.
+  2. Paste a >16,500 character string into the draft textarea.
   3. Assert Token Counter turns red.
   4. Assert "Save" button is disabled.
-* **Flow 3: Conversation Archiving:**
-  1. Archive a thread from the Threads tab.
-  2. Assert it disappears from Active list.
-  3. Switch to Archived tab; assert it appears and can be restored.
+* **Flow 3: Project & Conversation Rename/Delete + v2 Coming Soon Guards:**
+  1. Rename and delete projects inline via the ProjectWorkspace options menu and conversations via ChatHeader.
+  2. Verify Agents, Playground, and Artifacts entry points display the "Coming Soon" modal (deferred to Seldon v2 alongside Thread Archiving).
 
 ### 7.4 Manual Acceptance Checklist (The v1 Go/No-Go Gate)
 Before declaring Seldon v1 complete for daily use, run this manual checklist:
@@ -499,12 +498,12 @@ Replace `next/font/google` in `app/layout.tsx` with a local font declaration usi
 
 Seldon v1 is officially complete and ready for daily use when:
 
-1. **Security Hardened:** Localhost CSRF and cross-origin fetch protection is active.
+1. **Security Hardened:** Localhost CSRF, Origin, and DNS rebinding (`Host` allowlist) protection is active, and attachment paths are strictly contained within `data/uploads/`.
 2. **Thinking Traces Persist:** Reasoning blocks reload correctly after page refresh.
 3. **Context Engine Clean:** Unlinked attachments never leak into prompt context.
 4. **Codebase Clean:** Agents and Skills tables, routes, and UI are fully purged; dead components are deleted.
-5. **v1 Scope Delivered:** Threads can be archived; model outputs can be saved as library artifacts.
-6. **Tests Passing:** Vitest test suite passes with 100% green coverage on the context engine.
+5. **v1 Scope Delivered:** Projects and conversations support inline renaming and confirmed deletion; Agents, Playground, Artifacts, and Thread Archiving are deferred to Seldon v2 behind "Coming Soon" modal guards.
+6. **Tests Passing:** Vitest unit/integration and Playwright E2E test suites pass with 100% green coverage on the context engine, security guards, and responsive layouts.
 7. **Production Runner Ready:** `pnpm prod` builds offline, starts on `127.0.0.1:3000`, and backups run automatically.
 
 ---
@@ -513,9 +512,9 @@ Seldon v1 is officially complete and ready for daily use when:
 
 To execute this plan systematically, proceed in this exact sequence:
 
-1. **Step 1:** Fix the core bugs and security gaps identified in Phase 6 (`AUDIT-SEC-1`, `AUDIT-CTX-1`, `AUDIT-CTX-2`, `AUDIT-CTX-3`).
-2. **Step 2:** Purge dead components (`components/sidebar.tsx`, etc.) and remove Agents & Skills (Phase 7).
-3. **Step 3:** Implement v1 scope features: Conversation Archiving and Library Artifacts (Phase 8).
-4. **Step 4:** Install Vitest and write unit tests for the context budget and sandwich engine (Phase 9).
-5. **Step 5:** Add local backup script and production launch command (Phase 10).
-6. **Step 6:** Run the Manual Acceptance Checklist to verify daily driver readiness.
+1. **Step 1:** Fix the core bugs and security gaps identified in Phase 6 (`AUDIT-SEC-1`, `AUDIT-CTX-1`, `AUDIT-CTX-2`, `AUDIT-CTX-3`). [✓ COMPLETED]
+2. **Step 2:** Purge dead components (`components/sidebar.tsx`, etc.) and remove Agents & Skills (Phase 7/8). [✓ COMPLETED]
+3. **Step 3:** Implement v1 scope management (Quick Chats accordion, inline Rename & Delete for chats and projects; defer Archiving and Artifacts to v2). [✓ COMPLETED]
+4. **Step 4:** Install Vitest and Playwright and write automated tests for the context budget, sandwich engine, and responsive UI (Phase 10). [✓ COMPLETED]
+5. **Step 5:** Add local backup script and production launch command (Phase 11). [✓ COMPLETED]
+6. **Step 6:** Run the Manual Acceptance Checklist to verify daily driver readiness, tag `v1.0.0-rc.1`, and complete the final Design Audit.

@@ -119,29 +119,32 @@ export function Chat({ id, initialMessages, initialModel, projectId: initialProj
     setModelsError(null);
     fetch('/api/models')
       .then(async (r) => {
+        const data = (await r.json().catch(() => ({}))) as {
+          models?: string[];
+          error?: string;
+        };
         if (!r.ok) {
-          const data = await r.json().catch(() => ({}));
-          throw new Error(data.error || `Server returned status ${r.status}`);
+          setModels([]);
+          setModelsError(data.error || `Server returned status ${r.status}`);
+          return;
         }
-        return r.json();
-      })
-      .then((data: { models: string[] }) => {
-        setModels(data.models);
-        if (data.models.length === 0) {
+        const list = data.models ?? [];
+        setModels(list);
+        if (list.length === 0) {
           setModelsError('No models found. Please pull a model first.');
         } else {
           // If the model is unset or no longer installed locally, fall back to the first available model
           setModel((current) => {
-            if ((!current || !data.models.includes(current)) && data.models[0]) {
-              return data.models[0];
+            if ((!current || !list.includes(current)) && list[0]) {
+              return list[0];
             }
             return current;
           });
         }
       })
-      .catch((e) => {
-        console.error('failed to fetch models', e);
-        setModelsError(e.message || 'Failed to fetch models. Is Ollama running?');
+      .catch(() => {
+        setModels([]);
+        setModelsError('Cannot connect to Ollama on 127.0.0.1:11434 — is Ollama running?');
       })
       .finally(() => {
         setLoadingModels(false);
