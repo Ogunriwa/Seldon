@@ -18,6 +18,7 @@ import { db } from '@/lib/db/client';
 import { attachments, conversations } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { generateId } from 'ai';
+import { z } from 'zod';
 import { extractText } from '@/lib/extract';
 
 import path from 'path';
@@ -26,6 +27,10 @@ import fs from 'fs';
 // ── Upload Limits & File Type Configuration ──────────────────────────────
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const MAX_FILES = 5;
+
+const uploadFieldsSchema = z.object({
+  conversationId: z.string().trim().min(1, 'conversationId is required').max(128),
+});
 
 const ALLOWED_MIME_PREFIXES = [
   'text/',
@@ -74,7 +79,22 @@ function isAllowedFile(mediaType: string, filename: string): boolean {
 }
 
 function getExtension(filename: string): string {
-  return '.' + (filename.split('.').pop()?.toLowerCase() ?? '');
+  const base = path.basename(filename);
+  const dotIdx = base.lastIndexOf('.');
+  return dotIdx !== -1 ? base.slice(dotIdx).toLowerCase() : '';
+}
+
+const MIME_TO_IMAGE_EXT: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+};
+
+function getSafeImageExtension(mediaType: string, filename: string): string {
+  const rawExt = getExtension(filename);
+  if (IMAGE_EXTENSIONS.has(rawExt)) return rawExt;
+  return MIME_TO_IMAGE_EXT[mediaType] ?? '.png';
 }
 
 export async function POST(req: Request) {
@@ -87,14 +107,18 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const conversationId = formData.get('conversationId');
+  const rawConversationId = formData.get('conversationId');
+  const parsedFields = uploadFieldsSchema.safeParse({
+    conversationId: typeof rawConversationId === 'string' ? rawConversationId : '',
+  });
 
-  if (!conversationId || typeof conversationId !== 'string') {
+  if (!parsedFields.success) {
     return Response.json(
       { error: 'conversationId is required' },
       { status: 400 },
     );
   }
+  const { conversationId } = parsedFields.data;
 
   // Verify conversation exists
   const convo = await db
@@ -185,9 +209,12 @@ export async function POST(req: Request) {
       const buffer = Buffer.from(arrayBuffer);
 
       if (isImage(mediaType, filename)) {
-        // Option A: Write file to data/uploads/${id}${ext}
-        const ext = getExtension(filename);
-        const diskPath = path.join(uploadsDir, `${id}${ext}`);
+        // Option A: Write file to data/uploads/${id}${ext} with sanitized extension
+        const ext = getSafeImageExtension(mediaType, filename);
+        const diskPath = path.resolve(uploadsDir, `${id}${ext}`);
+        if (!diskPath.startsWith(path.resolve(uploadsDir) + path.sep)) {
+          throw new Error('Invalid upload destination path');
+        }
         const relPath = path.join('data', 'uploads', `${id}${ext}`);
         await fs.promises.writeFile(diskPath, buffer);
 
